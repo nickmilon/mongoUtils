@@ -3,13 +3,10 @@ Created on Dec 13, 2014
 
 @author: nickmilon
 '''
+from mongoUtils import _PATH_TO_JS
 
 
-def indexed_fields(a_collection):
-    return [i['key'][0][0] for i in a_collection.index_information().values()]
-
-
-def parse_js_fun(file_path, function_name, replace_vars=None):
+def parse_js(file_path, function_name, replace_vars=None):
     """ helper function to get a js function string from a file containing js functions.
         usefull if we want to call js functions from python as in mongoDB map reduce
         Function must be named starting in first column and end with '}' in first column
@@ -33,3 +30,7 @@ def parse_js_fun(file_path, function_name, replace_vars=None):
         return rt % replace_vars
     else:
         return rt
+
+
+def parse_js_default(file_name, function_name, replace_vars=None):
+    return parse_js(_PATH_TO_JS+file_name, function_name, replace_vars)

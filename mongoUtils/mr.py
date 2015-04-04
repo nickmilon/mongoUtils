@@ -8,20 +8,11 @@ from bson.code import Code
 from bson import SON
 
 from Hellas.Thiva import format_header
-from mongoUtils import _PATH_TO_JS
-from mongoUtils.utils import indexed_fields, parse_js_fun
+from mongoUtils.utils import parse_js_default
+from mongoUtils.collections import coll_index_names
 
 """ map reduce slow with sort see: https://jira.mongodb.org/browse/SERVER-16544
-    mr doesn't work with query on _id ? ? ?
-function rs () { return Math.random().toString(36).substr(2, 5)}
-Math.floor(Math.random() * 100) + 1
-Math.random().toString(35).slice(2)
-['da', 'de', 'en', 'es', 'fi', 'fr', 'hu', 'it', 'nl', 'pt', 'ro', 'ru', 'sv', 'tr'][Math.floor(Math.random() * 13)]
 """
-
-
-def parse_js(file_name, function_name, replace_vars=None):
-    return parse_js_fun(_PATH_TO_JS+file_name, function_name, replace_vars)
 
 
 def mr(
@@ -68,7 +59,7 @@ def mr(
         # nonAtomic not allowed on replace
     fun_map = Code(fun_map, {})
     if fun_reduce is None:
-        fun_reduce = parse_js('MapReduce.js', 'GroupCountsReduce')
+        fun_reduce = parse_js_default('MapReduce.js', 'GroupCountsReduce')
     fun_reduce = Code(fun_reduce, {})
 
     if sort:
@@ -91,7 +82,7 @@ def mr(
     if verbose > 0:
         frmt = "Map Reduce {}\n\
                 ok=        {ok:}\n\
-                millisecs= {timeMillis:,d}\n\
+                millisecs = {timeMillis:,d}\n\
                 counts=    {counts!s:}\n\
                 out=       {!s:}\n"
         print(frmt.format('End', out, **r))
@@ -117,7 +108,7 @@ def group_counts(
             r,col=mr_group(a_collection, 'lang', out={"replace": "del_1"}, verbose=3)
             r,col=mr_group(a_collection, 'lang', out={"replace": "del_1", 'db':'local'})
     """
-    FunMap = parse_js('MapReduce.js', 'GroupCountsMap', field_name)
+    FunMap = parse_js_default('MapReduce.js', 'GroupCountsMap', field_name)
     return mr(collection, FunMap, query=query, out=out, sort=sort, verbose=verbose, jsMode=jsMode)
 
 
@@ -167,8 +158,8 @@ def mr2(
     '''
     if out is None:
         out = 'mr2_'+operation
-    map_js = parse_js('MapReduce.js', operation+'Map')
-    reduce_js = parse_js('MapReduce.js', operation+'Reduce')
+    map_js = parse_js_default('MapReduce.js', operation+'Map')
+    reduce_js = parse_js_default('MapReduce.js', operation+'Reduce')
     mr_a = mr(
         col_a,
         map_js % (col_a_key),
@@ -176,7 +167,7 @@ def mr2(
         query=col_a_query,
         out={'db': db, 'replace': out} if db else {'replace': out},
         scope={'phase': 1},
-        sort={col_a_key: 1} if sort_on_key_fields and col_a_key in indexed_fields(col_a) else None,
+        sort={col_a_key: 1} if sort_on_key_fields and col_a_key in coll_index_names(col_a) else None,
         jsMode=jsMode,
         verbose=verbose
         )
@@ -187,7 +178,7 @@ def mr2(
         query=col_b_query,
         out={'db': db, 'reduce': out} if db else {'reduce': out},
         scope={'phase': 2},
-        sort={col_b_key: 1} if sort_on_key_fields and col_b_key in indexed_fields(col_b) else None,
+        sort={col_b_key: 1} if sort_on_key_fields and col_b_key in coll_index_names(col_b) else None,
         jsMode=jsMode,
         verbose=verbose
         )
@@ -196,17 +187,18 @@ def mr2(
 
 def schema(collection,
            query={},
-           out={"replace": 'tmpMrFields'},
-           verbose=2, meta=False,
+           out={"replace": 'tmpMrFields'},  # does not work with 'inline'
+           verbose=2,
+           meta=False,
            scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}}):
     """
         A kind of Schema Analyzer for mongo collections
         A utility which finds all field's names used by documents of a collection
         xxx.floatApprox xxx.bottom', xxx.top = an internal mongoDB field for storing long integers
-        for a different approach to this see: https://github.com/variety/variety
+        for a different approach see: https://github.com/variety/variety
     """
-    map_js = parse_js('MapReduce.js', 'KeysMap')
-    reduce_js = parse_js('MapReduce.js', 'KeysReduce')
+    map_js = parse_js_default('MapReduce.js', 'KeysMap')
+    reduce_js = parse_js_default('MapReduce.js', 'KeysReduce')
     rt = mr(
         collection,
         map_js,
@@ -249,8 +241,8 @@ def schema_meta(mr_keys_results, verbose=2):
               verbose 0 | 1
         Returns:list of containing stats for each field
     """
-    map_js = parse_js('MapReduce.js', 'KeysMetaMap')
-    reduce_js = parse_js('MapReduce.js', 'KeysMetaReduce')
+    map_js = parse_js_default('MapReduce.js', 'KeysMetaMap')
+    reduce_js = parse_js_default('MapReduce.js', 'KeysMetaReduce')
     hidden_fields = ['floatApprox', 'top', 'bottom']    # internal mongo fields
     res = mr(
         mr_keys_results[0],
