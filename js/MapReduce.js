@@ -1,8 +1,9 @@
 /**
  * useful js functions to be used by map-reduce 
  * functions should start on column 0 of a line and end with '}' in column 0 of a line
- * W A R N I N G : remember js can't handle large integer fields >53bits
- * print ('foo',JSON.stringify({foo:bar));  it will be put on mongoDB logs
+ * W A R N I N G : remember js can't handle large integer fields >53bits although mongo can
+ * for debug use print and printjson (output will print appear in the logs if verbosity is high enough) 
+ * i.e: ('foo',JSON.stringify({foo:bar));  
  */
 
 function GroupCountsMap () {
@@ -50,6 +51,7 @@ function JoinReduce(key, values) {
 	}  
 	return result;
 }
+
 
 function KeysMap() {      
 	var tmp,tmpEmpty,ChildObjTp,ChildIsAr; 

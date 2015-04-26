@@ -1,4 +1,6 @@
-__version__ = "0.1.1"
+'''utilities for MongoDB
+'''
+__version__ = "0.2.0"
 __author__ = "nickmilon"
 
 

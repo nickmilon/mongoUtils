@@ -1,69 +1,83 @@
-'''
-Created on Dec 22, 2010
-
-@author: nickmilon
-'''
+'''publish and/or subscribe to a collection'''
 
 from datetime import datetime
 from pymongo.errors import AutoReconnect
-from pymongo.cursor import _QUERY_OPTIONS
+from pymongo.cursor import CursorType
+from pymongo import collection
 from gevent import sleep, Greenlet
-from mongoUtils.collections import AuxTools, capped_set_or_get
+from mongoUtils.helpers import AuxTools, db_capped_set_or_get
+# capped_set_or_get
 from Hellas.Delphi import auto_retry
 from Hellas.Pella import dict_copy
 
 
 class PubSub(object):
-    """
-        generic class for Subscribing to a capped collection
-        can be used with non capped collections except we have to use self.poll(...)
-        instead of self.tail(....)
-        pubsub_col MUST include a 'ts' field for compatibility with oplog collections
-        until it has at least one document stored
-        i.e. to view your local  see: example test_SubToCappedOptLog
-        to replay oplog collection: set database to 'local' and collection 'oplog.rs'
-                                    warning: DO NOT write to oplog
-        @note check here for creating capped collection with ts field
-        http://blog.pythonisito.com/2013/04/mongodb-pubsub-with-capped-collections.html
-        https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py
+    '''**generic class for Publishing/Subscribing  to a capped collection
+    useful for implementing task-message queues and oplog tailing**
 
-        Parameters:
-            client:  (obj) a pymongo dbclient instance
-            db_name: (str) database name
-            col_name:(str) collection name
-            name:    (str) this instance name, defaults to collection name
-            reset:   (Bool) drops & recreates collection and resets id counters if True
-            capped:  (Bool)set to True for capped collections
-            size:    (int) capped collection size in bytes
-            max_docs:(int) capped collection max documents count
+    it can also be used with non capped collections except it must use polling instead of a tailing cursor
+    collection **must** include a **ts** field for compatibility with oplog collections
+    until it has at least one document stored
+    i.e. to view your local  see: example test_SubToCappedOptLog
+    to replay oplog collection: set database to 'local' and collection 'oplog.rs'
 
-    """
-    def __init__(self, client, db_name, col_name, name=None,
+    .. Warning:: Make sure you DO NOT attempt writing to oplog collection
+
+    .. Seealso:: more info `here <http://blog.pythonisito.com/2013/04/mongodb-pubsub-with-capped-collections.html>`__
+        and `here <https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py>`__
+
+    :Args:
+
+    - collection_or_name: (obj or str) a pymongo collection or a string
+    - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
+    - name:    (str) collection name a name for this instance if not given defaults to db.name|collection.name
+    - capped:  (bool optional) set to True for to get a capped collection
+    - reset:   (bool) drops & recreates collection and resets id counters if True
+    - size:    (int) capped collection size in bytes
+    - max_docs:(int) capped collection max documents count
+    '''
+
+    #===============================================================================
+# def test_SubToCappedOptLog():
+#     mconf = mongoConfToPy('mongonm01')
+#     dbcl = MdbClient(**mconf)
+#     def log_docs(doc):
+#     print  ". . . . "* 20, "\n%s" %(str (doc))
+#     SubToCapped(dbcl.client.local.oplog.rs , func=log_docs)
+    def __init__(self, collection_or_name, db=None, name=None,
                  capped=True, reset=False,
                  size=2 ** 30,  # ~1 GB
                  max_docs=None):
-        self._name = col_name if name is None else name
-        self.client = client
-        self._col_name = col_name
-        self._capped = capped
-        self.db = self.client[db_name]
-        self.aux_tools = AuxTools(client, db_name=db_name)
+        if isinstance(collection_or_name, collection.Collection):
+            self._col_name = collection_or_name.name
+            self.db = collection_or_name.database
+        else:
+            self._col_name = collection_or_name
+            assert(db is not None)
+            self.db = db
+        self.aux_tools = AuxTools(db=self.db)
         if reset:
             self.reset()
         if capped is True:
-            self.pubsub_col = capped_set_or_get(client, db_name, self._col_name, size, max_docs)
+            self.pubsub_col = db_capped_set_or_get(db, self._col_name, size, max_docs)
         else:
-            self.pubsub_col = self.db[col_name]
-        self._iscupped = self.pubsub_col.options().get('capped')
+            self.pubsub_col = self.db[self._col_name]
+        self._name = self.pubsub_col.db.name + '|' + self.pubsub_col.name if name is None else name
+        self._capped = self.pubsub_col.options().get('capped')
         self.pubsub_col.ensure_index("ts", background=True)
         self._continue = True
         self.counters = {'id_start': None, 'id_cur': None, 'msg_count': 0, 'dt': None}
 
+    @property
+    def name(self):
+        return self._name
+
     def reset(self):
+        '''drops collection and resets sequence generator'''
         self.db.drop_collection(self._col_name)
         self.aux_tools.sequence_reset(self._col_name)
 
-    def counters_set(self, id_value):
+    def _counters_set(self, id_value):
         if self.counters['id_start'] is None:
             self.counters['id_start'] = id_value
         self.counters['id_cur'] = id_value
@@ -71,12 +85,12 @@ class PubSub(object):
         self.counters['dt'] = datetime.utcnow()
 
     def _init_query(self, start_after='last'):
-        """ oplog_replay query option needs {'$gte' or '$gt' ts}
-            Parameters:
-                start_from ['last'|'start'|value]
-                        on next inserted document if 'last'
-                        from 1st document if 'start'  i.e kind of replay
-                        on next document after ts=number if number
+        """oplog_replay query option needs {'$gte' or '$gt' ts}
+        Parameters:
+        start_from ['last'|'start'|value]
+        on next inserted document if 'last'
+        from 1st document if 'start'  i.e kind of replay
+        on next document after ts=number if number
         """
         doc = None
         # print "locals 111", locals()
@@ -91,11 +105,9 @@ class PubSub(object):
 
     def _get_cursor(self, query={}, fields=None, start_after='last'):
         query.update(self._init_query(start_after=start_after))
-        if self._iscupped:
-            cursor = self.pubsub_col.find(query, fields=fields,
-                                          tailable=True, await_data=True)
+        if self._capped:
+            cursor = self.pubsub_col.find(query, fields=fields, cursor_type=CursorType.TAILABLE_AWAIT, oplog_replay=True)
             cursor.hint([('$natural', -1)])
-            cursor.add_option(_QUERY_OPTIONS['oplog_replay'])
         else:
             cursor = self.pubsub_col.find(query, fields=fields, sort=[('$natural', -1)])
             cursor.hint([('$natural', -1)])
@@ -107,8 +119,8 @@ class PubSub(object):
         return self.aux_tools.sequence_next(self._col_name)
 
     def _acknowledge(self, doc):
-        """ marks doc as received
-            we check state to make sure than it was not picked by another client meanwhile
+        """marks doc as received
+        we check state to make sure than it was not picked by another client meanwhile
         """
 
         rt = self.pubsub_col.find_and_modify({'_id': doc['_id'], 'state': doc['state']},
@@ -131,9 +143,9 @@ class PubSub(object):
         return self.pubsub_col.insert(doc, **kwargs)
 
     def pub(self, topic, verb, payload, target=None, state=0, ackn=0, async=False, **kwargs):
-        """ Parameters:
-                ackn: (int) request acknowledgement (by incrementing state)
-                      0=no acknowledge, > 0 acknowledge
+        """Parameters:
+        ackn: (int) request acknowledgement (by incrementing state)
+        0=no acknowledge, > 0 acknowledge
         """
         if async:
             return Greenlet.spawn(self._pub, topic, verb, payload, target, state, ackn, **kwargs)
@@ -158,7 +170,7 @@ class PubSub(object):
                 for doc in docs:
                     query.update({'ts': {'$gt': doc['ts']}})
                     if doc['ackn'] == 0 or self._acknowledge(doc):
-                        self.counters_set(doc['_id'])
+                        self._counters_set(doc['_id'])
                         yield doc
 
         query = self.query(topic, verb, target, state)
@@ -168,8 +180,7 @@ class PubSub(object):
 
     def sub_tail(self, topic=None, verb=None, target=True, state=0,
                  fields=None, start_after='last'):
-        """ subscribe by tail
-        """
+        '''subscribe by tail'''
         query = self.query(topic, verb, target, state)
         return self.tail(query, fields, start_after)
 
@@ -184,7 +195,7 @@ class PubSub(object):
                 try:
                     doc = cursor.next()
                     if doc['ackn'] == 0 or self._acknowledge(doc):
-                        self.counters_set(doc['_id'])
+                        self._counters_set(doc['_id'])
                         yield doc
                 except StopIteration:
                     # print ("StopIteration")
@@ -200,9 +211,9 @@ class PubSub(object):
         self.tail_exit(cursor)
 
     def tail_exit(self, cursor):
-        """ used for deluging only i.e. check cursor state etc
-        """
+        '''used for deluging only i.e. check cursor state etc'''
         pass
 
     def stop(self):
+        '''stops subscription'''
         self._continue = False

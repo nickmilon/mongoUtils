@@ -1,17 +1,21 @@
 /**
- * some js tools
+ * some js tools and utilities 
+ * you can save those in a file in  mongo_datafiles_path/scripts directory then load as follows
+ * load("scripts/xxxx.js")  
+`* load("/data/db/scripts/xxxx.js")
+ *
  */
-
-function _muTests() {
+function muTests() {
 	// to call individual function from mongo shell:
 	// db.loadServerScripts();
-	// mt = new _muTests;
+	// mt = new muTests;
 	// mt.functionName(arg ....)
 	this.timeIt = function (startTime) {
 		if (startTime === undefined) {return new Date().getTime();}
 		return (new Date().getTime() - startTime) / 1000;
 	};
 	this.strHash = function (str) {
+		// return hash of a string
 		var hash = 0, i, chr, len;
 		if (str.length === 0) {return hash;}
 		for (i = 0, len = str.length; i < len; i++) {
@@ -76,10 +80,29 @@ function _muTests() {
 	};
 }
  
-function _muCollUtils() {
+
+function muHelpers() {
+	this.dbClients = function (verbose){
+		// returns currently connected clients
+		var clients = [];
+		db.currentOp(true).inprog.forEach(
+				  function(op) {
+				    if(op.client) {
+				    	printjson(op);
+				    	connections.push(op.client);
+				    }
+				  }
+				);
+		if (verbose) {print (JSON.stringify(clients));}
+		return clients;
+	}; 
+}
+
+
+function muCollUtils() {
 	// to call individual function from mongo shell:
 	// db.loadServerScripts();
-	// mu = new _muCollUtils;
+	// mu = new muCollUtils;
 	// mu.functionName(arg ....)
 	this.copyField = function  (collectionObj, queryOrWhere, fromFieldNameStr,toFieldNameStr,reportEvery)
 	// copies a fromFieldNameStr value to toFieldNameStr for all documents in queryOrWhere
@@ -131,10 +154,24 @@ function _muCollUtils() {
 				} 
 		);  
 		return counter;
-	};	 
+	};
+	this.removeDupls = function (collectionName, keyField, reportEvery) {
+		if (reportEvery === undefined) {reportEvery=10;}  
+		sort = {};
+		sort[keyField] = 1;
+		var myidLast; 
+		var res = {docsCnt:0,docsRemoved:0};
+		db[collectionName].find().sort(sort).clone().forEach(
+			function(doc) {
+				    res.docsCnt += 1; 
+					if (doc.myid == myidLast) {db[collectionName].remove({_id:doc._id}); res.docsRemoved +=1;}
+					else {myidLast = doc.myid;}
+				    if (res.docsCnt % reportEvery === 0) {print (JSON.stringify(res))} 
+				} 
+		);
+		return res;
+	};
 } 
-
- 
 
 
  
