@@ -1,0 +1,441 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>mongoUtils.helpers &mdash; mongoUtils 0.2.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.2.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="mongoUtils 0.2.2 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">mongoUtils 0.2.2 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for mongoUtils.helpers</h1><div class="highlight"><pre>
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">some helper functions and classes</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">from</span> <span class="nn">Hellas.Sparta</span> <span class="kn">import</span> <span class="n">DotDot</span>
+<span class="kn">from</span> <span class="nn">bson</span> <span class="kn">import</span> <span class="n">json_util</span>
+<span class="kn">from</span> <span class="nn">mongoUtils</span> <span class="kn">import</span> <span class="n">_PATH_TO_JS</span>
+<span class="kn">from</span> <span class="nn">pymongo.read_preferences</span> <span class="kn">import</span> <span class="n">ReadPreference</span>
+<span class="kn">from</span> <span class="nn">pymongo.collection</span> <span class="kn">import</span> <span class="n">Collection</span>
+<span class="kn">from</span> <span class="nn">pymongo.database</span> <span class="kn">import</span> <span class="n">Database</span>
+
+
+<div class="viewcode-block" id="MongoUtilsError"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.MongoUtilsError">[docs]</a><span class="k">class</span> <span class="nc">MongoUtilsError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Base class for all MongoUtils exceptions.&quot;&quot;&quot;</span>
+
+</div>
+<div class="viewcode-block" id="CollectionExists"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.CollectionExists">[docs]</a><span class="k">class</span> <span class="nc">CollectionExists</span><span class="p">(</span><span class="n">MongoUtilsError</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collection_name</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">MongoUtilsError</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="s">&quot;Collection Exists &quot;</span> <span class="o">+</span> <span class="n">collection_name</span><span class="p">)</span>
+
+</div>
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">operations on a collection object</span>
+<span class="sd">&#39;&#39;&#39;</span>
+
+
+<div class="viewcode-block" id="col_stats"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.col_stats">[docs]</a><span class="k">def</span> <span class="nf">col_stats</span><span class="p">(</span><span class="n">collection_obj</span><span class="p">,</span> <span class="n">indexDetails</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">10</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;collection statistics</span>
+<span class="sd">       scale default in MegaBytes, give it 2 ** 30 for GigaBytes</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="n">DotDot</span><span class="p">(</span><span class="n">collection_obj</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">command</span><span class="p">(</span><span class="s">&quot;collstats&quot;</span><span class="p">,</span> <span class="n">collection_obj</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                                                  <span class="n">indexDetails</span><span class="o">=</span><span class="n">indexDetails</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="coll_index_names"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_index_names">[docs]</a><span class="k">def</span> <span class="nf">coll_index_names</span><span class="p">(</span><span class="n">coll_obj</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s">&#39;key&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">coll_obj</span><span class="o">.</span><span class="n">index_information</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+
+</div>
+<div class="viewcode-block" id="coll_validate"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_validate">[docs]</a><span class="k">def</span> <span class="nf">coll_validate</span><span class="p">(</span><span class="n">coll_obj</span><span class="p">,</span> <span class="n">scandata</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">full</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39; see here: http://docs.mongodb.org/manual/reference/command/validate/#dbcmd.validate</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="n">coll_obj</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">validate_collection</span><span class="p">(</span><span class="n">coll_obj</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">scandata</span><span class="o">=</span><span class="n">scandata</span><span class="p">,</span> <span class="n">full</span><span class="o">=</span><span class="n">full</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="coll_range"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_range">[docs]</a><span class="k">def</span> <span class="nf">coll_range</span><span class="p">(</span><span class="n">coll_obj</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&quot;_id&quot;</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;returns (minimum, maximum) value of a field</span>
+
+<span class="sd">    .. Warning:: it uses &#39;eval&#39; use it carefully</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">idMin</span> <span class="o">=</span> <span class="n">coll_obj</span><span class="o">.</span><span class="n">find_one</span><span class="p">(</span><span class="n">sort</span><span class="o">=</span><span class="p">[(</span><span class="n">field_name</span><span class="p">,</span> <span class="mi">1</span><span class="p">)],</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="n">field_name</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">idMin</span><span class="p">:</span>
+        <span class="n">idMin</span> <span class="o">=</span> <span class="n">DotDot</span><span class="p">(</span><span class="n">idMin</span><span class="p">)</span>
+        <span class="n">idMin</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="s">&quot;idMin.&quot;</span> <span class="o">+</span> <span class="n">field_name</span><span class="p">)</span>  <span class="c"># @note:  a little tricky coz field_name can be sub fields</span>
+        <span class="n">idMax</span> <span class="o">=</span> <span class="n">DotDot</span><span class="p">(</span><span class="n">coll_obj</span><span class="o">.</span><span class="n">find_one</span><span class="p">(</span><span class="n">sort</span><span class="o">=</span><span class="p">[(</span><span class="n">field_name</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)],</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="n">field_name</span><span class="p">]))</span>
+        <span class="n">idMax</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="s">&quot;idMax.&quot;</span> <span class="o">+</span> <span class="n">field_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">idMin</span><span class="p">,</span> <span class="n">idMax</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span>
+
+</div>
+<div class="viewcode-block" id="coll_update_id"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_update_id">[docs]</a><span class="k">def</span> <span class="nf">coll_update_id</span><span class="p">(</span><span class="n">coll_obj</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">new_id</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;updates a document&#39;s id by inserting a new doc then removing old one</span>
+
+<span class="sd">    .. Warning:: very dangerous if you don&#39;t know what you are doing, use it at your own risk.</span>
+<span class="sd">       Never use it in production</span>
+<span class="sd">       also be careful on swallow copies</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">docNew</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">docNew</span><span class="p">[</span><span class="s">&#39;_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_id</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">rt</span> <span class="o">=</span> <span class="n">coll_obj</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">docNew</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span>
+        <span class="k">return</span> <span class="bp">False</span><span class="p">,</span> <span class="ne">Exception</span><span class="p">,</span> <span class="n">e</span>  <span class="c"># @note: on error return before removing original !!!!</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">True</span><span class="p">,</span> <span class="n">coll_obj</span><span class="o">.</span><span class="n">remove</span><span class="p">({</span><span class="s">&quot;_id&quot;</span><span class="p">:</span> <span class="n">doc</span><span class="p">[</span><span class="s">&#39;_id&#39;</span><span class="p">]},</span>  <span class="n">multi</span><span class="o">=</span><span class="bp">False</span><span class="p">),</span> <span class="n">rt</span>
+
+</div>
+<div class="viewcode-block" id="coll_chunks"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_chunks">[docs]</a><span class="k">def</span> <span class="nf">coll_chunks</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="mi">100000</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&quot;_id&quot;</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Provides a range query arguments for scanning a collection in batches equals to chunk_size</span>
+<span class="sd">    for optimization reasons first chunk size is chunk_size +1</span>
+<span class="sd">    similar to undocumented splitVector command</span>
+
+<span class="sd">    &gt;&gt;&gt; db.runCommand({splitVector: &quot;test.uniques&quot;, keyPattern: {dim0: 1}, maxChunkSizeBytes: 32000000})</span>
+
+<span class="sd">    :Args:</span>
+
+<span class="sd">    - collection: (obj) a pymongo collection instance</span>
+<span class="sd">    - chunk_size: (int) requested  number of documents in each chunk, defaults to 100000</span>
+<span class="sd">    - field_name: (str) the collection field to use, defaults to _id, all documents in</span>
+<span class="sd">      collection must have a value for this field</span>
+
+<span class="sd">    :Returns:</span>
+
+<span class="sd">    - a list with a query specification dictionary for each chunk</span>
+
+<span class="sd">    :Usage:</span>
+
+<span class="sd">    &gt;&gt;&gt; rt = coll_chunks(a_collection, 100)</span>
+<span class="sd">    &gt;&gt;&gt; for i in rt: print i</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">idMin</span><span class="p">,</span> <span class="n">idMax</span> <span class="o">=</span> <span class="n">coll_range</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+    <span class="n">curMin</span> <span class="o">=</span> <span class="n">idMin</span>
+    <span class="n">curMax</span> <span class="o">=</span> <span class="n">idMax</span>
+    <span class="n">cntChunk</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">cntChunk</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">curMax</span> <span class="o">&lt;</span> <span class="n">idMax</span><span class="p">:</span>
+        <span class="n">nextChunk</span> <span class="o">=</span> <span class="n">collection</span><span class="o">.</span><span class="n">find_one</span><span class="p">({</span><span class="n">field_name</span><span class="p">:</span> <span class="p">{</span><span class="s">&quot;$gte&quot;</span><span class="p">:</span> <span class="n">curMin</span><span class="p">}},</span> <span class="n">sort</span><span class="o">=</span><span class="p">[(</span><span class="n">field_name</span><span class="p">,</span> <span class="mi">1</span><span class="p">)],</span>
+                                        <span class="n">skip</span><span class="o">=</span><span class="n">chunk_size</span><span class="p">,</span> <span class="n">as_class</span><span class="o">=</span><span class="n">DotDot</span><span class="p">)</span>
+        <span class="n">curMax</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="s">&#39;nextChunk.&#39;</span> <span class="o">+</span> <span class="n">field_name</span><span class="p">)</span> <span class="k">if</span> <span class="n">nextChunk</span> <span class="k">else</span> <span class="n">idMax</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="p">{</span><span class="n">field_name</span><span class="p">:</span> <span class="p">{</span><span class="s">&quot;$gte&quot;</span> <span class="k">if</span> <span class="n">cntChunk</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s">&quot;$gt&quot;</span><span class="p">:</span> <span class="n">curMin</span><span class="p">,</span> <span class="s">&quot;$lte&quot;</span><span class="p">:</span> <span class="n">curMax</span><span class="p">}}</span>
+        <span class="k">yield</span> <span class="n">cntChunk</span><span class="p">,</span> <span class="n">query</span>
+        <span class="n">cntChunk</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">curMin</span> <span class="o">=</span> <span class="n">curMax</span>
+
+</div>
+<div class="viewcode-block" id="coll_copy"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.coll_copy">[docs]</a><span class="k">def</span> <span class="nf">coll_copy</span><span class="p">(</span><span class="n">collObjFrom</span><span class="p">,</span> <span class="n">collObjTarget</span><span class="p">,</span> <span class="n">filterDict</span><span class="o">=</span><span class="p">{},</span>
+              <span class="n">create_indexes</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">dropTarget</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">verboseLevel</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39; # @note: we can also copy the collection using Map Reduce which is probably faster:</span>
+<span class="sd">        http://stackoverflow.com/questions/3581058/mongodb-map-reduce-minus-the-reduce</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">verboseLevel</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">print</span> <span class="s">&quot;copy_collection:</span><span class="si">%s</span><span class="s"> to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">collObjFrom</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">collObjTarget</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dropTarget</span><span class="p">:</span>
+        <span class="n">collObjTarget</span><span class="o">.</span><span class="n">drop</span><span class="p">()</span>
+    <span class="n">docs</span> <span class="o">=</span> <span class="n">collObjFrom</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">filterDict</span><span class="p">)</span>
+    <span class="n">totalRecords</span> <span class="o">=</span> <span class="n">collObjFrom</span><span class="o">.</span><span class="n">count</span> <span class="k">if</span> <span class="n">filterDict</span> <span class="o">==</span> <span class="p">{}</span> <span class="k">else</span> <span class="n">docs</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">cnt</span><span class="p">,</span> <span class="n">doc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">docs</span><span class="p">):</span>
+        <span class="n">percDone</span> <span class="o">=</span> <span class="nb">round</span><span class="p">((</span><span class="n">cnt</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">/</span> <span class="n">totalRecords</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span>
+        <span class="k">if</span> <span class="n">verboseLevel</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">percDone</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">print</span> <span class="p">(</span><span class="s">&quot;</span><span class="si">%%</span><span class="s"> done=:</span><span class="si">%3d</span><span class="s"> </span><span class="si">%%</span><span class="s"> :</span><span class="si">%10d</span><span class="s"> of </span><span class="si">%10d</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">percDone</span><span class="p">,</span> <span class="n">cnt</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">totalRecords</span><span class="p">))</span>
+        <span class="n">collObjTarget</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">secure</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">create_indexes</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">collObjFrom</span><span class="o">.</span><span class="n">index_information</span><span class="p">()</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s">&quot;_id_&quot;</span><span class="p">:</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="s">&#39;key&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">verboseLevel</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">print</span> <span class="s">&quot;creating index:</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+                <span class="n">collObjTarget</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span><span class="n">idx</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">idx</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">collObjTarget</span>
+
+</div>
+<div class="viewcode-block" id="db_capped_create"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.db_capped_create">[docs]</a><span class="k">def</span> <span class="nf">db_capped_create</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">10000000</span><span class="p">,</span> <span class="n">maxDocs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">colName</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">db</span><span class="o">.</span><span class="n">collection_names</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">db</span><span class="o">.</span><span class="n">create_collection</span><span class="p">(</span><span class="n">colName</span><span class="p">,</span> <span class="n">capped</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">sizeBytes</span><span class="p">,</span>
+                                    <span class="nb">max</span><span class="o">=</span><span class="n">maxDocs</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="n">autoIndexId</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">CollectionExists</span><span class="p">(</span><span class="n">colName</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="db_convert_to_capped"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.db_convert_to_capped">[docs]</a><span class="k">def</span> <span class="nf">db_convert_to_capped</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">30</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">colName</span> <span class="ow">in</span> <span class="n">db</span><span class="o">.</span><span class="n">collection_names</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">db</span><span class="o">.</span><span class="n">command</span><span class="p">({</span><span class="s">&quot;convertToCapped&quot;</span><span class="p">:</span> <span class="n">colName</span><span class="p">,</span> <span class="s">&#39;size&#39;</span><span class="p">:</span> <span class="n">sizeBytes</span><span class="p">})</span>
+
+</div>
+<div class="viewcode-block" id="db_capped_set_or_get"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.db_capped_set_or_get">[docs]</a><span class="k">def</span> <span class="nf">db_capped_set_or_get</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">30</span><span class="p">,</span> <span class="n">maxDocs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    see more here: http://docs.mongodb.org/manual/tutorial/use-capped-collections-for-fast-writes-and-reads</span>
+<span class="sd">    autoIndexId must be True for replication so must be True except on a stand alone mongodb or</span>
+<span class="sd">    when collection belongs to &#39;local&#39; db</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">colName</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">db</span><span class="o">.</span><span class="n">collection_names</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">db</span><span class="o">.</span><span class="n">create_collection</span><span class="p">(</span><span class="n">colName</span><span class="p">,</span> <span class="n">capped</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">sizeBytes</span><span class="p">,</span>
+                                    <span class="nb">max</span><span class="o">=</span><span class="n">maxDocs</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="n">autoIndexId</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">cappedCol</span> <span class="o">=</span> <span class="bp">self</span><span class="p">[</span><span class="n">colName</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cappedCol</span><span class="o">.</span><span class="n">options</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;capped&#39;</span><span class="p">):</span>
+            <span class="n">db</span><span class="o">.</span><span class="n">command</span><span class="p">({</span><span class="s">&quot;convertToCapped&quot;</span><span class="p">:</span> <span class="n">colName</span><span class="p">,</span> <span class="s">&#39;size&#39;</span><span class="p">:</span> <span class="n">sizeBytes</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">cappedCol</span>
+
+</div>
+<div class="viewcode-block" id="client_schema"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.client_schema">[docs]</a><span class="k">def</span> <span class="nf">client_schema</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">details</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">col_details</span><span class="p">(</span><span class="n">col</span><span class="p">):</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">details</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="n">col</span><span class="o">.</span><span class="n">name</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">details</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">res</span><span class="p">[</span><span class="s">&#39;stats&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">col_stats</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span>
+    <span class="n">rt</span> <span class="o">=</span> <span class="p">[[</span><span class="n">d</span><span class="p">,</span> <span class="p">[</span><span class="n">col_details</span><span class="p">(</span><span class="n">client</span><span class="p">[</span><span class="n">d</span><span class="p">][</span><span class="n">c</span><span class="p">])</span>
+               <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">client</span><span class="p">[</span><span class="n">d</span><span class="p">]</span><span class="o">.</span><span class="n">collection_names</span><span class="p">()]]</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">database_names</span><span class="p">()]</span>
+    <span class="n">rt</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">rt</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="n">pp_doc</span><span class="p">(</span><span class="n">rt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rt</span>
+
+</div>
+<div class="viewcode-block" id="muCollection"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muCollection">[docs]</a><span class="k">class</span> <span class="nc">muCollection</span><span class="p">(</span><span class="n">Collection</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;just a plain pymongo collection with some extra features</span>
+<span class="sd">    it is safe to cast an existing pymongo collection to this by:</span>
+
+<span class="sd">    &gt;&gt;&gt; a_pymongo_collection_instance.__class__ = muCollection</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+<div class="viewcode-block" id="muCollection.stats"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muCollection.stats">[docs]</a>    <span class="k">def</span> <span class="nf">stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">indexDetails</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">10</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;collection statistics (see :func:`col_stats`).</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">col_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">indexDetails</span><span class="p">,</span> <span class="n">scale</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="muCollection.index_names"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muCollection.index_names">[docs]</a>    <span class="k">def</span> <span class="nf">index_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;see :func:`coll_index_names`&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">coll_index_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="muCollection.validate"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muCollection.validate">[docs]</a>    <span class="k">def</span> <span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scandata</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">full</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;see :func:`coll_validate`&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">coll_validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scandata</span><span class="o">=</span><span class="n">scandata</span><span class="p">,</span> <span class="n">full</span><span class="o">=</span><span class="n">full</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="muDatabase"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase">[docs]</a><span class="k">class</span> <span class="nc">muDatabase</span><span class="p">(</span><span class="n">Database</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;just a plain pymongo Database with some extra features</span>
+<span class="sd">    it is safe to cast an existing pymongo collection to this by:</span>
+
+<span class="sd">    &gt;&gt;&gt; a_pymongo_database_instance.__class__ = muDatabase</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+<div class="viewcode-block" id="muDatabase.dbstats"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.dbstats">[docs]</a>    <span class="k">def</span> <span class="nf">dbstats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">10</span> <span class="o">**</span> <span class="mi">30</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">DotDot</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command</span><span class="p">(</span><span class="s">&quot;dbStats&quot;</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="muDatabase.collstats"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.collstats">[docs]</a>    <span class="k">def</span> <span class="nf">collstats</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">details</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">coll_details</span><span class="p">(</span><span class="n">col</span><span class="p">):</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">details</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">{</span><span class="s">&#39;namespace&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s">&#39;.&#39;</span> <span class="o">+</span> <span class="n">col</span><span class="o">.</span><span class="n">name</span><span class="p">}</span>
+            <span class="k">if</span> <span class="n">details</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">res</span><span class="p">[</span><span class="s">&#39;stats&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">collstats</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">res</span>
+        <span class="n">rt</span> <span class="o">=</span> <span class="n">DotDot</span><span class="p">([[</span><span class="n">c</span><span class="p">,</span> <span class="n">coll_details</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="n">c</span><span class="p">])]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection_names</span><span class="p">()])</span>
+        <span class="n">pp_doc</span><span class="p">(</span><span class="n">rt</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rt</span>
+</div>
+<div class="viewcode-block" id="muDatabase.server_status"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.server_status">[docs]</a>    <span class="k">def</span> <span class="nf">server_status</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="n">rt</span> <span class="o">=</span> <span class="n">DotDot</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">command</span><span class="p">(</span><span class="s">&quot;serverStatus&quot;</span><span class="p">))</span>
+        <span class="n">pp_doc</span><span class="p">(</span><span class="n">rt</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rt</span>
+</div>
+<div class="viewcode-block" id="muDatabase.capped_create"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.capped_create">[docs]</a>    <span class="k">def</span> <span class="nf">capped_create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">10000000</span><span class="p">,</span> <span class="n">maxDocs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">db_capped_create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="p">,</span> <span class="n">maxDocs</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="muDatabase.convert_to_capped"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.convert_to_capped">[docs]</a>    <span class="k">def</span> <span class="nf">convert_to_capped</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">30</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">db_convert_to_capped</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="muDatabase.capped_set_or_get"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.capped_set_or_get">[docs]</a>    <span class="k">def</span> <span class="nf">capped_set_or_get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="o">=</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">30</span><span class="p">,</span> <span class="n">maxDocs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;see :func:`db_capped_set_or_get`. &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">db_capped_set_or_get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">colName</span><span class="p">,</span> <span class="n">sizeBytes</span><span class="p">,</span> <span class="n">maxDocs</span><span class="p">,</span> <span class="n">autoIndexId</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="muDatabase.js_fun_add"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.js_fun_add">[docs]</a>    <span class="k">def</span> <span class="nf">js_fun_add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fun_name</span><span class="p">,</span> <span class="n">fun_str</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39; to use the function from mongo shell you have to execute db.loadServerScripts(); first</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">system_js</span><span class="p">[</span><span class="n">fun_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">fun_str</span>
+        <span class="k">return</span> <span class="n">fun_name</span>
+</div>
+<div class="viewcode-block" id="muDatabase.js_fun_add_default"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.js_fun_add_default">[docs]</a>    <span class="k">def</span> <span class="nf">js_fun_add_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_name</span><span class="p">,</span> <span class="n">fun_name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">js_fun_add</span><span class="p">(</span><span class="n">fun_name</span><span class="p">,</span> <span class="n">parse_js_default</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span> <span class="n">fun_name</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="muDatabase.js_list"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.muDatabase.js_list">[docs]</a>    <span class="k">def</span> <span class="nf">js_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">system_js</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">muCollection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="pp_doc"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.pp_doc">[docs]</a><span class="k">def</span> <span class="nf">pp_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39; pretty print a boson document&#39;&#39;&#39;</span>
+    <span class="n">rt</span> <span class="o">=</span> <span class="n">json_util</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="n">indent</span><span class="p">,</span> <span class="n">separators</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">,</span> <span class="s">&#39;: &#39;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="k">print</span> <span class="p">(</span><span class="n">rt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rt</span>
+
+
+<span class="c">#  &#39;Copeland&#39;s snippet &lt;https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py&gt;`_ </span>
+<span class="c"># &#39;counters collection &lt;http://docs.mongodb.org/manual/tutorial/create-an-auto-incrementing-field/#auto-increment-counters-collection&gt;`_</span></div>
+<div class="viewcode-block" id="AuxTools"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.AuxTools">[docs]</a><span class="k">class</span> <span class="nc">AuxTools</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;**a collection to support generation of sequence numbers using counter&#39;s collection technique**</span>
+
+<span class="sd">    .. Note:: counter&#39;s collection guarantees a unique incremental id value even in a multiprocess/mutithreading environment</span>
+<span class="sd">              but if this id is used for insertions. Insertion order is not 100% guaranteed to correspond to this id.</span>
+<span class="sd">              If insertion order is critical use the Optimistic Loop technique</span>
+
+<span class="sd">    .. Seealso:: `counters collection &lt;http://docs.mongodb.org/manual/tutorial/</span>
+<span class="sd">        create-an-auto-incrementing-field/#auto-increment-counters-collection&gt;`__</span>
+<span class="sd">        and `Copeland&#39;s snippet &lt;https://github.com/rick446/</span>
+<span class="sd">        MongoTools/blob/master/mongotools/pubsub/channel.py&gt;`__</span>
+
+<span class="sd">    :Args:</span>
+
+<span class="sd">        - collection (obj optional) a pymongo collection object</span>
+<span class="sd">        - db (obj optional) a pymongo database object</span>
+<span class="sd">        - client:  (obj optional) a pymongo MongoClient instance</span>
+
+<span class="sd">        all parameters are optional but exactly one must be provided</span>
+<span class="sd">        if collection is None a collection db[AuxCol]  will be used</span>
+<span class="sd">        if collection is None a collection on db [&#39;AuxTools&#39;][&#39;AuxCol&#39;] will be used</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collection</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">collection</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">collection</span> <span class="o">=</span> <span class="n">db</span><span class="p">[</span><span class="s">&#39;AuxCol&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">client</span><span class="p">[</span><span class="s">&#39;AuxTools&#39;</span><span class="p">][</span><span class="s">&#39;AuxCol&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">collection</span><span class="o">.</span><span class="n">with_options</span><span class="p">(</span><span class="n">read_preference</span><span class="o">=</span><span class="n">ReadPreference</span><span class="o">.</span><span class="n">PRIMARY</span><span class="p">)</span>
+        <span class="c"># @note make sure sequence_current gets correct value</span>
+
+<div class="viewcode-block" id="AuxTools.sequence_reset"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.AuxTools.sequence_reset">[docs]</a>    <span class="k">def</span> <span class="nf">sequence_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">seq_name</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;resets sequence&#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">remove</span><span class="p">({</span><span class="s">&#39;_id&#39;</span><span class="p">:</span> <span class="n">seq_name</span><span class="p">})</span>
+</div>
+<div class="viewcode-block" id="AuxTools.sequence_set"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.AuxTools.sequence_set">[docs]</a>    <span class="k">def</span> <span class="nf">sequence_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">seq_name</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;sets sequence&#39;s current value to val if doesn&#39;t exist it is created&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">find_and_modify</span><span class="p">({</span><span class="s">&#39;_id&#39;</span><span class="p">:</span> <span class="n">seq_name</span><span class="p">},</span> <span class="p">{</span><span class="s">&#39;$set&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s">&#39;val&#39;</span><span class="p">:</span> <span class="n">val</span><span class="p">}},</span>
+                                               <span class="n">upsert</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">new</span><span class="o">=</span><span class="bp">True</span><span class="p">)[</span><span class="s">&#39;val&#39;</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="AuxTools.sequence_current"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.AuxTools.sequence_current">[docs]</a>    <span class="k">def</span> <span class="nf">sequence_current</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">seq_name</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;returns sequence&#39;s current value for particular name&#39;&#39;&#39;</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">find_one</span><span class="p">({</span><span class="s">&#39;_id&#39;</span><span class="p">:</span> <span class="n">seq_name</span><span class="p">})</span>
+        <span class="k">return</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">doc</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">doc</span><span class="p">[</span><span class="s">&#39;val&#39;</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="AuxTools.sequence_next"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.AuxTools.sequence_next">[docs]</a>    <span class="k">def</span> <span class="nf">sequence_next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">seq_name</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;increments sequence&#39;s current value by incr, if doesn&#39;t exist sets initial value to incr&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">find_and_modify</span><span class="p">({</span><span class="s">&#39;_id&#39;</span><span class="p">:</span> <span class="n">seq_name</span><span class="p">},</span> <span class="p">{</span><span class="s">&#39;$inc&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s">&#39;val&#39;</span><span class="p">:</span> <span class="n">inc</span><span class="p">}},</span>
+                                               <span class="n">upsert</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">new</span><span class="o">=</span><span class="bp">True</span><span class="p">)[</span><span class="s">&#39;val&#39;</span><span class="p">]</span>
+
+</div></div>
+<div class="viewcode-block" id="parse_js"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.parse_js">[docs]</a><span class="k">def</span> <span class="nf">parse_js</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">function_name</span><span class="p">,</span> <span class="n">replace_vars</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;helper function to get a js function string from a file containing js functions.</span>
+<span class="sd">    useful if we want to call js functions from python as in mongoDB map reduce</span>
+<span class="sd">    Function must be named starting in first column and end with &#39;}&#39; in first column</span>
+
+<span class="sd">    :Args:</span>
+
+<span class="sd">    - file_path: (str): full path_name</span>
+<span class="sd">    - function name (str): name of function</span>
+<span class="sd">    - replace_vars (optional) a tuple to replace %s variables in functions</span>
+
+<span class="sd">    :Returns:</span>
+
+<span class="sd">    a js function as string</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">rt</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="s">&#39;function {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">function_name</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fin</span><span class="p">:</span>
+        <span class="n">ln</span> <span class="o">=</span> <span class="n">fin</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+        <span class="k">while</span> <span class="n">ln</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">ln</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">start</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rt</span><span class="p">:</span>
+                <span class="n">rt</span> <span class="o">+=</span> <span class="n">ln</span>
+            <span class="k">if</span> <span class="n">rt</span> <span class="ow">and</span> <span class="n">ln</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;}&#39;</span><span class="p">):</span>
+                <span class="k">break</span>
+            <span class="n">ln</span> <span class="o">=</span> <span class="n">fin</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">rt</span> <span class="ow">and</span> <span class="n">replace_vars</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rt</span> <span class="o">%</span> <span class="n">replace_vars</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rt</span>
+
+</div>
+<div class="viewcode-block" id="parse_js_default"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.helpers.parse_js_default">[docs]</a><span class="k">def</span> <span class="nf">parse_js_default</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span> <span class="n">function_name</span><span class="p">,</span> <span class="n">replace_vars</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;fetch a js function od default directory from file_name</span>
+<span class="sd">    see parse_js</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="n">parse_js</span><span class="p">(</span><span class="n">_PATH_TO_JS</span><span class="o">+</span><span class="n">file_name</span><span class="p">,</span> <span class="n">function_name</span><span class="p">,</span> <span class="n">replace_vars</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2015, nickmilon.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.3.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.3</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

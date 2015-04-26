@@ -1,0 +1,199 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>mongoUtils.aggregation &mdash; mongoUtils 0.2.2 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.2.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="mongoUtils 0.2.2 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" />
+   
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../index.html">mongoUtils 0.2.2 documentation</a> &raquo;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for mongoUtils.aggregation</h1><div class="highlight"><pre>
+<span class="sd">&#39;&#39;&#39;aggregation operations&#39;&#39;&#39;</span>
+
+<span class="kn">from</span> <span class="nn">mongoUtils.helpers</span> <span class="kn">import</span> <span class="n">pp_doc</span>
+<span class="kn">from</span> <span class="nn">pymongo.command_cursor</span> <span class="kn">import</span> <span class="n">CommandCursor</span>
+
+
+<div class="viewcode-block" id="Aggregation"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation">[docs]</a><span class="k">class</span> <span class="nc">Aggregation</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;**a helper for constructing aggregation pipelines** see:</span>
+<span class="sd">    `aggregation framework  &lt;http://docs.mongodb.org/manual/reference/aggregation/&gt;`__ supports all</span>
+<span class="sd">    `aggregation operators  &lt;http://docs.mongodb.org/manual/reference/operator/aggregation/&gt;`__</span>
+
+<span class="sd">    :Args:</span>
+
+<span class="sd">    - collection: (obj) a pymongo collection object</span>
+<span class="sd">    - pipeline: (optional list) an initial pipeline list</span>
+<span class="sd">    - kwargs: `any optional arguments  &lt;http://docs.mongodb.org/manual/reference/operator/aggregation/&gt;`__</span>
+
+<span class="sd">    :Usage:</span>
+<span class="sd">     &gt;&gt;&gt; ppl = Aggregation(my_collection, allowDiskUse=True)</span>
+<span class="sd">     &gt;&gt;&gt; ppl.group({&#39;_id&#39;: &#39;$field_name, &#39;count&#39;: {&#39;$sum&#39;: 1}})</span>
+<span class="sd">     &gt;&gt;&gt; ppl()</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">_operators</span> <span class="o">=</span> <span class="s">&#39;project match redact limit skip sort unwind group out geoNear&#39;</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">)</span>
+ 
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collection</span><span class="p">,</span> <span class="n">pipeline</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">_makefun</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">value</span><span class="p">,</span> <span class="n">position</span><span class="o">=</span><span class="bp">None</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s">&#39;$&#39;</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">position</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span> <span class="o">=</span> <span class="n">collection</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pll</span> <span class="o">=</span> <span class="n">pipeline</span> <span class="ow">or</span> <span class="p">[]</span>      <span class="c"># pipeline list</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operators</span><span class="p">:</span>    <span class="c"># auto build functions for operators</span>
+            <span class="n">_makefun</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39; returns the pipeline (a list)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pll</span>
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Aggregation.help"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.help">[docs]</a>    <span class="k">def</span> <span class="nf">help</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">what</span><span class="o">=</span><span class="s">&#39;operators&#39;</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;returns list of available operators&#39;&#39;&#39;</span>
+        <span class="k">print</span> <span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">_operators</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Aggregation.add"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.add">[docs]</a>    <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operator</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">position</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">position</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">position</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pll</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pll</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">position</span><span class="p">,</span> <span class="p">{</span><span class="n">operator</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+</div>
+<div class="viewcode-block" id="Aggregation.search"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.search">[docs]</a>    <span class="k">def</span> <span class="nf">search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operator</span><span class="p">,</span> <span class="n">count</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39; returns (position, operator</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">keys</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">operator</span><span class="p">:</span>
+                <span class="n">cnt</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">cnt</span> <span class="o">==</span> <span class="n">count</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Aggregation.save"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.save">[docs]</a>    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_pathname</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;save pipeline list to file&#39;&#39;&#39;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_pathname</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">code</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Aggregation.remove"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.remove">[docs]</a>    <span class="k">def</span> <span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">position</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;remove an element from pipeline list given its position&#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ppl</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">position</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Aggregation.code"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.Aggregation.code">[docs]</a>    <span class="k">def</span> <span class="nf">code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">pp_doc</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;perform the aggregation when called</span>
+<span class="sd">        &gt;&gt;&gt; Aggregation_object()</span>
+
+<span class="sd">        `for kwargs see: &lt;http://api.mongodb.org/python/current/api/pymongo/collection.html?highlight=aggregate/&gt;`__</span>
+<span class="sd">        :Args:</span>
+<span class="sd">          - `verbose`: (bool) if True will print results but return None because there is no rewind() for CommandCursor</span>
+<span class="sd">          - `kwargs` (optional): if any of kwargs are specified override any kwargs provided on instance initialization.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">tmp_kw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_kwargs</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">tmp_kw</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">rt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span><span class="p">,</span> <span class="o">**</span><span class="n">tmp_kw</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rt</span><span class="p">,</span> <span class="n">CommandCursor</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">rt</span><span class="p">:</span>
+                    <span class="k">print</span> <span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                <span class="k">return</span> <span class="bp">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">print</span> <span class="p">(</span><span class="n">rt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rt</span>
+
+</div>
+<div class="viewcode-block" id="AggrCounts"><a class="viewcode-back" href="../../mongoUtils.html#mongoUtils.aggregation.AggrCounts">[docs]</a><span class="k">class</span> <span class="nc">AggrCounts</span><span class="p">(</span><span class="n">Aggregation</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;constructs a group count aggregation pipeline based on :class:`~Aggregation` class</span>
+<span class="sd">    :Args:</span>
+<span class="sd">    - collection:` a pymongo collection object</span>
+<span class="sd">    - field: (str) field name</span>
+<span class="sd">    - match: a query match expression</span>
+<span class="sd">    - sort: a sort expression defaults to {&#39;count&#39;: -1}</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collection</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span>  <span class="n">match</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">sort</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;count&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">},</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">AggrCounts</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">group</span><span class="p">({</span><span class="s">&#39;_id&#39;</span><span class="p">:</span> <span class="s">&#39;$&#39;</span><span class="o">+</span><span class="n">field</span><span class="p">,</span> <span class="s">&#39;count&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s">&#39;$sum&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}})</span>
+        <span class="k">if</span> <span class="n">sort</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">sort</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2015, nickmilon.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.3.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.3</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
