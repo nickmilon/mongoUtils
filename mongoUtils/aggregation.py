@@ -14,7 +14,7 @@ class Aggregation(object):
     - collection: (obj) a pymongo collection object
     - pipeline: (optional list) an initial pipeline list
     - kwargs: `any optional arguments  <http://docs.mongodb.org/manual/reference/operator/aggregation/>`__
-
+        - allowDiskUse=True
     :Usage:
      >>> ppl = Aggregation(my_collection, allowDiskUse=True)
      >>> ppl.group({'_id': '$field_name, 'count': {'$sum': 1}})

@@ -15,11 +15,13 @@ class PubSub(object):
     '''**generic class for Publishing/Subscribing  to a capped collection
     useful for implementing task-message queues and oplog tailing**
 
+    https://softwaremill.com/mqperf/
+
     it can also be used with non capped collections except it must use polling instead of a tailing cursor
     collection **must** include a **ts** field for compatibility with oplog collections
     until it has at least one document stored
     i.e. to view your local  see: example test_SubToCappedOptLog
-    to replay oplog collection: set database to 'local' and collection 'oplog.rs'
+    to replay oplog collection: set database to 'local' and collection to 'oplog.rs'
 
     .. Warning:: Make sure you DO NOT attempt writing to oplog collection
 
