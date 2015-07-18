@@ -3,7 +3,7 @@
  * functions should start on column 0 of a line and end with '}' in column 0 of a line
  * W A R N I N G : remember js can't handle large integer fields >53bits although mongo can
  * for debug use print and printjson (output will print appear in the logs if verbosity is high enough) 
- * i.e: ('foo',JSON.stringify({foo:bar));  
+ * i.e: print ('result',key,JSON.stringify(result));  
  */
 
 function GroupCountsMap () {
@@ -17,7 +17,7 @@ function GroupCountsReduce (key, values) {
 function OrphansMap () {  
 	//	finds how many documents exists with given field in each collection 
 	//	example scope= {'phase':1}  phase =1 on first Map call, =2 on second 
-	var emkey= this.%s;  // %s   it will be replaced by caller with exact field name
+	var emkey= this.%s;  //  s  will be replaced by caller with exact field name
 	var vl;
 	if (phase==1) {vl = {a:1,b:0,sum:1};}  
 	else          {vl = {a:0,b:1,sum:1};} 
@@ -25,7 +25,7 @@ function OrphansMap () {
 } 
 
 function OrphansReduce(key, values) {
-	var result={a:0,b:0,sum:0}; 
+	var result={a: 0, b: 0, sum: 0}; 
 	for(var i in values) {
 		result.a += values[i].a;  
 		result.b += values[i].b; 
@@ -36,22 +36,21 @@ function OrphansReduce(key, values) {
 
 function JoinMap () {  
 	//	joins 2 collections on a given field
-	var emkey= this.%s;  // %s   it will be replaced by caller with exact field name
+	var emkey= this.%s;  //  s will be replaced by caller with exact field name
 	var vl;
-	if (phase==1) {vl={a:this,b:null};}  
-	else          {vl={a:null,b:this};} 
+	if (phase==1) {vl={a:this, b:null};}  
+	else          {vl={a:null, b:this};} 
 	emit(emkey, vl);
 } 
 
 function JoinReduce(key, values) {
-	var result={a:null,b:null}; 
-	for(var i in values) { 
-		result.a = values[i].a;  
-		result.b = values[i].b;  
-	}  
+	var result={}; 
+	for(var i in values) {  
+		if (values[i].a != null)  {result.a = values[i].a;}  // for some reason doesn't work with !== (gives false nulls)
+		if (values[i].b != null)  {result.b = values[i].b;} 
+	}
 	return result;
 }
-
 
 function KeysMap() {      
 	var tmp,tmpEmpty,ChildObjTp,ChildIsAr; 

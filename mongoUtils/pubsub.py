@@ -1,4 +1,4 @@
-'''publish and/or subscribe to a collection'''
+"""publish and/or subscribe to a collection"""
 
 from datetime import datetime
 from pymongo.errors import AutoReconnect
@@ -12,7 +12,7 @@ from Hellas.Pella import dict_copy
 
 
 class PubSub(object):
-    '''**generic class for Publishing/Subscribing  to a capped collection
+    """**generic class for Publishing/Subscribing  to a capped collection
     useful for implementing task-message queues and oplog tailing**
 
     https://softwaremill.com/mqperf/
@@ -24,6 +24,8 @@ class PubSub(object):
     to replay oplog collection: set database to 'local' and collection to 'oplog.rs'
 
     .. Warning:: Make sure you DO NOT attempt writing to oplog collection
+                also you understand potential side effects as described 
+                `here <https://www.mongodb.com/blog/post/pitfalls-and-workarounds-for-tailing-the-oplog-on-a-mongodb-sharded-cluster>`_
 
     .. Seealso:: more info `here <http://blog.pythonisito.com/2013/04/mongodb-pubsub-with-capped-collections.html>`__
         and `here <https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py>`__
@@ -37,7 +39,7 @@ class PubSub(object):
     - reset:   (bool) drops & recreates collection and resets id counters if True
     - size:    (int) capped collection size in bytes
     - max_docs:(int) capped collection max documents count
-    '''
+    """
 
     #===============================================================================
 # def test_SubToCappedOptLog():
@@ -75,7 +77,7 @@ class PubSub(object):
         return self._name
 
     def reset(self):
-        '''drops collection and resets sequence generator'''
+        """drops collection and resets sequence generator"""
         self.db.drop_collection(self._col_name)
         self.aux_tools.sequence_reset(self._col_name)
 
@@ -88,11 +90,12 @@ class PubSub(object):
 
     def _init_query(self, start_after='last'):
         """oplog_replay query option needs {'$gte' or '$gt' ts}
-        Parameters:
-        start_from ['last'|'start'|value]
-        on next inserted document if 'last'
-        from 1st document if 'start'  i.e kind of replay
-        on next document after ts=number if number
+
+        :Parameters:
+            - start_from [last|start|value]
+                - on next inserted document if 'last'
+                - from 1st document if 'start'  i.e kind of replay
+                - on next document after ts=number if number
         """
         doc = None
         # print "locals 111", locals()
@@ -182,7 +185,7 @@ class PubSub(object):
 
     def sub_tail(self, topic=None, verb=None, target=True, state=0,
                  fields=None, start_after='last'):
-        '''subscribe by tail'''
+        """subscribe by tail"""
         query = self.query(topic, verb, target, state)
         return self.tail(query, fields, start_after)
 
@@ -213,9 +216,9 @@ class PubSub(object):
         self.tail_exit(cursor)
 
     def tail_exit(self, cursor):
-        '''used for deluging only i.e. check cursor state etc'''
+        """used for deluging only i.e. check cursor state etc"""
         pass
 
     def stop(self):
-        '''stops subscription'''
+        """stops subscription"""
         self._continue = False

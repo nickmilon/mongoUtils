@@ -1,11 +1,17 @@
-'''map reduce operations
-notes:map reduce slow with sort see: https://jira.mongodb.org/browse/SERVER-16544 (solved in version 3.0)
-'''
+"""map reduce operations
+
+.. Note:: | `see mongodb manual <http://docs.mongodb.org/manual/core/map-reduce/>`_
+          | optimize by sorting on emit field
+            `see notes <http://edgystuff.tumblr.com/post/7624019777/optimizing-map-reduce-with-mongodb>`_
+          | but also see `my ticket <https://jira.mongodb.org/browse/SERVER-16544>`_ (probably solved after v3)
+          | when mr output is {'inline':1 } MAX output size is 16MB (Max BOSON doc size)
+          | when map reduce runs on a replica secondary only output option is 'inline'
+
+"""
 
 from bson.code import Code
 from bson import SON
 
-from Hellas.Thiva import format_header
 from mongoUtils.helpers import parse_js_default
 from mongoUtils.helpers import coll_index_names
 
@@ -22,18 +28,16 @@ def mr(
     jsMode=False,               # True|False (don't convert to Bson between map & reduce if True)
     verbose=1                   # if 1 includes timing info on output if 2,3  more details
         ):
-    '''simplified generic Map Reduce
-    see: http://docs.mongodb.org/manual/reference/command/mapReduce/
-    * when output is {'inline':1} MAX output size is 16MB (Max BOSON doc size)
-    * if map reduce is on a replica secondary only output option is 'inline'
+    """simplified generic Map Reduce
+    `see MongoDB Map Reduce <http://docs.mongodb.org/manual/reference/command/mapReduce/>`_
 
-    :Args:
-
+    :Parameters:
       - coll (object) a pymongo collection instance
       - fun_map js function used for map
       - fun_reduce js function used for reduce defaults to a function that increments value count
       - query a pymongo query dictionary to query collection, defaults to {}
-      - out  a dictionary for output specification  {'replace'|'merge'|'reduce'|'inline':collection_name|'db:db_name}
+      - out  a dictionary for output specification  {replace|merge|reduce|:collection_name|db:db_name}
+        also can specify {'inline':1} for in memory operation (with some limitations)
         defaults to {"replace": 'mr_tmp'}
       - scope vars available during map-reduce-finalize
       - sort dictionary to sort before map  i.e: sort= { "_id":1 }
@@ -42,24 +46,20 @@ def mr(
       - db' (optional): database_name
         if no db is specified output collection will be in same db as input coll
 
-    :Returns: tuple (results collection or results list if out={"inline":1}, MR response object)
-
-    :Notes:
-
-    optimize by sorting on emit field
-        see: http://edgystuff.tumblr.com/post/7624019777/optimizing-map-reduce-with-mongodb
-        but also see my ticket on:https://jira.mongodb.org/browse/SERVER-16544
-        docs.mongodb.org/manual/reference/method/db.coll.mapReduce/#db.coll.mapReduce
-    '''
+    :Returns: tuple (results collection or results list if out={"inline" :1}, MR response statistics)
+    :Example: see :func:`group_counts` function
+    """
     def mr_cmd():
-        '''returns the actual command from output parameter'''
+        """returns the actual command from output parameter"""
         return [i for i in ['replace', 'merge', 'reduce', 'inline']
                 if i in list(out.keys())][0]
-    if len(out.keys()) > 1:
-        command = mr_cmd()
-        # print ("command", command)
-        out = SON([(command, out[command]), ('db', out.get('db')),
-                   ('nonAtomic', out.get('nonAtomic', False))])
+    command = mr_cmd()
+    out_db = out.get('db', None)
+    out = SON([(command, out[command]), ('nonAtomic', out.get('nonAtomic', False))])
+    if out_db:
+        out.update(SON([('db', out_db)]))
+#     out = SON([(command, out[command]), ('db', out.get('db')),
+#                    ('nonAtomic', out.get('nonAtomic', False))])
         # nonAtomic not allowed on replace
     fun_map = Code(fun_map, {})
     if fun_reduce is None:
@@ -90,12 +90,14 @@ def mr(
                 counts=    {counts!s:}\n\
                 out=       {!s:}\n"
         print(frmt.format('End', out, **r))
-    if 'db' in list(out.keys()):
-        # @note:  can be dict or SON, either way it has property keys
-        results = coll.database.connection[r['result']['db']][r['result']['coll']]
+
+    if command == 'inline':
+        # if 'results' in list(r.keys()):              # @note:  results is a list if inline else a coll
+        results = r['results']
+        del r['results']
     else:
-        results = r['results'] if list(out.keys())[0] == 'inline' else coll.database[r['result']]
-        # @note:  results is a list if inline else a coll
+        db_out = out.get('db', coll.database.name)     # if db not specified it is the collection_db
+        results = coll.database.client[db_out][out[command]]
     return results, r
 
 
@@ -107,13 +109,23 @@ def group_counts(
         sort=None,
         jsMode=False,
         verbose=1):
-    '''group values of field using map reduce (see: 'mr')
+    """group values of field using map reduce
 
-    :Examples:
+    :Parameters: see :func:`mr` function
 
-    - r,col=mr_group(a_collection, 'lang', out={"replace": "del_1"}, verbose=3)
-    - r,col=mr_group(a_collection, 'lang', out={"replace": "del_1", 'db':'local'})
-    '''
+    :Example:
+        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr      # import MongoClient
+        >>> db = MongoClient(testDbConStr).get_default_database()                                  # get test database
+        >>> col, res = group_counts(db.muTest_tweets_users, 'lang', out={"replace": "muTest_mr"})  # execute MR
+        >>> res                                                                                    # check MR statistics
+        {u'counts': {u'input': 997, u'reduce': 72, u'emit': 997, u'output': 21},
+        u'timeMillis': 256, u'ok': 1.0, u'result': u'del_1'}
+        >>> for i in col.find(sort=[('value',-1)]): print i                                        # print MR results
+        {'_id': 'en', 'value': 352.0}
+        {'_id': 'ja', 'value': 283.0}
+        {'_id': 'es', 'value': 100.0}
+        >>>
+    """
     FunMap = parse_js_default('MapReduce.js', 'GroupCountsMap', field_name)
     return mr(collection, FunMap, query=query, out=out, sort=sort, verbose=verbose, jsMode=jsMode)
 
@@ -131,64 +143,64 @@ def mr2(
         sort_on_key_fields=False,
         jsMode=False,
         verbose=3):
-    '''A kind of set operation on 2 collections
+    """A kind of sets operation on 2 collections
     Map Reduce two collection objects (col_a, col_b) on a common field (col_a_key, col_b_key)
     allowing queries (col_a_query, col_b_query)
 
-    :Args:
-
-    - col_a, col_b  :pymongo collection objects
-    - col_a_key col_b_key: name of fields to run MR for col_a & col_b
-    - col_a_query, col_b_query optional queries to run on respective collections
-    - db optional db name to use for results (use 'local' to avoid replication on results)
-    - out: optional output collection name defaults to mr_operation
-    - sort_on_key_fields: (bool) tries to sort on key if key has an index this is supposed to speed up MR
-    - jsMode (True or False) (see mongo documentation)
+    :Parameters:
+        - col_a, col_b: pymongo collection objects
+        - col_a_key col_b_key: name of fields to run MR for col_a & col_b
+        - col_a_query, col_b_query optional queries to run on respective collections
+        - db optional db name to use for results (use 'local' to avoid replication on results)
+        - out: optional output collection name defaults to mr_operation
+        - sort_on_key_fields: (bool) tries to sort on key if key has an index this is supposed to speed up MR
+        - jsMode (True or False) (see mongo documentation)
 
     :Returns:
-
-    a tuple(results_collection collection, MapReduce1 statistics, MapReduce2 statistics)
-
+        a tuple(results_collection collection, MapReduce1 statistics, MapReduce2 statistics)
     :results_collection:
+        - if operation == 'Orphans':
+            - {'_id': 'XXXXX', 'value': {'A': 2.0, 'sum': 3.0, 'B': 1.0}}
+            - value.a = count of documents in a
+            - value.b count of documents in b,
+            - sum = count of documents in both A+B
+            - to get documents non existing in col_a:
+            - >>> resultCollection.find({'value.a':0})
+            - to get documents non existing in col_b:
+            - >>> resultCollection.find({'value.b':0})
+            - to get documents existing in both col_a and col_b
+            - >>> resultCollection.find({'value.a':{'$gt':0}, 'value.a':{'$gt': 0}})
+            - to check for unique in both collections
+            - >>> resultCollection.find({'value.sum':2})
+        - if operation = 'Join':
+            - performs a join between 2 collections
+            - {'_id': 'XXXXX', 'value': {'a': document from col_a,'b': document from col_b}}
+            - if a document is missing from a collection its corresponding value is None
+            - .. Warning:: document's value will also be None if key exists but is None
+                so res[0].find({'value.b': None}} means either didn't exist in collection b
+                or its value is None
 
-    if operation = 'Orphans':
-    {u'_id': u'105719173', u'value': {u'A': 2.0, u'sum': 3.0, u'B': 1.0}}
-    _id = key
-    value.a = count of documents in a,
-    value.b count of documents in b,
-    sum = count of documents in both A+B
-    to get documents non existing in col_a:
-
-    >>> resultCollection.find({'value.a':0})
-
-    to get documents non existing in col_a:
-
-    >>> resultCollection.find({'value.b':0})
-
-    to get documents existing in both col_a and col_b
-    >>> resultCollection.find({'value.a':{'$gt':0}, 'value.a':{'$gt':0}})
-
-    to check for unique in both collections
-
-    >>> resultCollection.find({'value.sum':2})
-
-    :result_collection:
-
-    if operation = 'Join':
-
-    {'_id': '100001818', u'value': {'a': document from col_a,'b':document from col_b}}
-
-    if a document is missing from a collection its value will be None
-
-    :example:
-
-    >>> mr2("Orphans', bof.TstatusesSrc, '_id', {}, col_b=ag13, col_b_key='_id.vl',
-    col_b_query={'_id.kt': 'src'}, out='mr_join', jsMode=False, verbose=3)
-    '''
+    :Example:
+        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr      # import MongoClient
+        >>> db = MongoClient(testDbConStr).get_default_database()                                  # get test database
+        >>> res , stats1, stats2 = mr2('Orphans', db.muTest_tweets, 'user.screen_name',            # execute
+                col_b = db.muTest_tweets_users, col_b_key='screen_name',
+                col_b_query= {'screen_name': {'$ne':'Albert000G'}}, verbose=0)
+        >>> res.find({'value.b':0}).count()                                                        # not found in b
+        1
+        >>> res.find({'value.b':0})[0]
+        {u'_id': u'Albert000G', u'value': {u'a': 1.0, u'sum': 1.0, u'b': 0.0}}
+        >>> res = mr.mr2('Join', db.muTest_tweets, 'user.screen_name',                             # execute a Join
+                  col_b = db.muTest_tweets_users, col_b_key='screen_name', col_a_query= {},
+                  col_b_query= {'screen_name':{'$ne':'Albert000G'}},   verbose=3)
+        >>> f = res[0].find({'value.b': None})                                                     # check missing in b
+        >>> for i in f: print i['value']['a']['user']['screen_name']
+        Albert000G
+    """
     if out is None:
         out = 'mr2_' + operation
-    map_js = parse_js_default('MapReduce.js', operation+'Map')
-    reduce_js = parse_js_default('MapReduce.js', operation+'Reduce')
+    map_js = parse_js_default('MapReduce.js', operation + 'Map')
+    reduce_js = parse_js_default('MapReduce.js', operation + 'Reduce')
     mr_a = mr(
         col_a,
         map_js % (col_a_key),
@@ -200,6 +212,7 @@ def mr2(
         jsMode=jsMode,
         verbose=verbose
         )
+
     mr_b = mr(
         col_b,
         map_js % (col_b_key),
@@ -212,98 +225,3 @@ def mr2(
         verbose=verbose
         )
     return mr_b[0], mr_a[1], mr_b[1]
-
-
-def schema(collection,
-           query={},
-           out={"replace": 'tmpMrFields'},  # does not work with 'inline'
-           verbose=2,
-           meta=False,
-           scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}}):
-    '''A kind of Schema Analyzer for mongo collections
-    A utility which finds all field's names used by documents of a collection
-    xxx.floatApprox xxx.bottom', xxx.top = an internal mongoDB field for storing long integers
-    for a different approach see: https://github.com/variety/variety
-    '''
-    map_js = parse_js_default('MapReduce.js', 'KeysMap')
-    reduce_js = parse_js_default('MapReduce.js', 'KeysReduce')
-    rt = mr(
-        collection,
-        map_js,
-        reduce_js,
-        query=query,
-        out=out,
-        scope=scope,
-        verbose=verbose)
-    results_col, mr_stats = rt
-    totalRecords = float(mr_stats['counts']['input'])
-    totalCnt = 0
-    if verbose > 0:
-        print ("calculating percentages ...")
-    for doc in results_col.find():
-        cnt = doc['value']['cnt']
-        percent = (cnt / totalRecords) * 100
-        doc['value']['percent'] = percent
-        results_col.update(
-            {'_id': doc['_id']},
-            {"$set": {"value.percent": percent}}, safe=True, multi=False
-            )
-        # @warning:  don't use {_id:id} does not work possibly coz different subfields order
-        # print results_col.find_one({'_id':doc['_id']}, safe=True)
-        totalCnt += cnt
-    if verbose > 0:
-        print ("creating indexes")
-    rt[0].ensure_index('_id.type', background=True)
-    if meta:
-        rtMeta = schema_meta(rt, verbose=verbose)
-        return rt, rtMeta
-    else:
-        return rt
-
-
-def schema_meta(mr_keys_results, verbose=2):
-    '''given the results returned by schema calculates and returns statistics for
-    schema fields also pretty prints stats if verbose > 0
-    Be aware of hidden mongoDB fields that mongoDB uses internally
-
-    :Args:
-
-    - mr_keys_results: results tuples returned be schema
-    - verbose 0 | 1
-
-
-    :Returns:
-
-    list of statistics for each field
-    '''
-    map_js = parse_js_default('MapReduce.js', 'KeysMetaMap')
-    reduce_js = parse_js_default('MapReduce.js', 'KeysMetaReduce')
-    hidden_fields = ['floatApprox', 'top', 'bottom']    # internal mongo fields
-    res = mr(
-        mr_keys_results[0],
-        map_js,
-        reduce_js,
-        out={'inline': 1},
-        verbose=verbose)
-    info = {}
-    for i in res[0]:
-        i['value']['cnt'] = int(i['value']['cnt'])
-        i['value']['depth'] = int(i['value']['depth'])
-        i['value']['notes'] = ""
-        i['value']['field'] = i['_id']
-        if i['value']['depth'] > 1:
-            if i['_id'].split('.')[-1] in hidden_fields or i['_id'] == '_id.str':
-                i['value']['notes'] += "-hidden mongo field"
-    l = sorted(res[0], key=lambda x: x['value']['depth'])
-    info['max depth'] = l[-1]['value']['depth']
-    info['total fields'] = len(l)
-    l = sorted(res[0], key=lambda x: x['_id'])
-    if verbose > 0:
-        frmt = "|{field:^70s}|{cnt:16,d}|{percent:7.2f}|{depth:5d}|{notes:^30s}|"
-        header = format_header(frmt)
-        print(header)
-        for i in l:
-            print(frmt.format(**i['value']))
-        print(header.split('\n')[0])
-        print (info)
-    return l

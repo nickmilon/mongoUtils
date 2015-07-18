@@ -1,15 +1,15 @@
-'''
+"""
 Created on Feb 24, 2013
 @author: nickmilon
 see: https://docs.python.org/2/distutils/setupscript.html
-'''
+"""
 from setuptools import setup, find_packages
 version = '0.1.1'
 print 'packages', find_packages()
 setup(
     packages=find_packages(),
     # package_data={'mongoUtils': ['js/*.js']},
-    package_data={'mongoUtils': ['../js/*.*']},
+    package_data={'mongoUtils': ['../js|data/*.*']},
     name="mongoUtils",
     version=version,
     author="nickmilon",
@@ -32,11 +32,12 @@ setup(
         "Programming Language :: Python :: 3.4",
         "Topic :: Database"],
     license="MIT or Apache License, Version 2.0",
-    keywords=["mongo", "mongodb", "pymongo", "mongo utilities"],
+    keywords=["mongo", "mongodb", "pymongo", "mongo utilities", 'database'],
     # requirements and specs
     zip_safe=False,
     tests_require=["nose"],
     install_requires=[
-        'pymongo'
+        'pymongo',
+        'Hellas'
     ],
 )
