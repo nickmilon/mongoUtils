@@ -65,7 +65,7 @@ class Import(object):
     def _import_to_collection_before(self):
         """successors can call this or implement their's"""
         if self.stats_every > 0:
-            print (self.format_stats_header)
+            print(self.format_stats_header)
 
     def _import_to_collection_after(self):
         """successors can call this or implement their's"""
@@ -73,7 +73,7 @@ class Import(object):
             self.print_stats()
 
     def print_stats(self):
-        print (self.format_stats.format(**self.info))
+        print(self.format_stats.format(**self.info))
 
     def __call__(self):
         return self.import_to_collection()
@@ -169,7 +169,7 @@ class ImportXls(Import):
 
     def row_to_doc(self, valueslist, _id=None):
         if isinstance(self._fields_or_fun, list):
-            doc = dict(zip(self._fields_or_fun, valueslist))
+            doc = dict(list(zip(self._fields_or_fun, valueslist)))
         else:
             doc = self._fields_or_fun(valueslist)
         if _id is not None and doc.get('_id') is None:

@@ -11,11 +11,10 @@ cur_path = os.path.dirname(os.path.realpath(__file__))
 read_init = open(cur_path+'/mongoUtils/__init__.py').read()
 __version__ = re.search("__version__\s*=\s*'(.*)'", read_init, re.M).group(1)
 __author__ = re.search("__author__\s*=\s*'(.*)'", read_init, re.M).group(1)
-print 'packages', find_packages()
+print('installing packages', find_packages()) 
 ######################
 setup(
     packages=find_packages(),
-    # package_data={'mongoUtils': ['js/*.js']},
     package_data={'mongoUtils': ['../js*.*', '../data/*.*']},
     name="mongoUtils",
     version=__version__,

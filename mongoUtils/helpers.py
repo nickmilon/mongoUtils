@@ -28,7 +28,7 @@ def col_stats(collection_obj, indexDetails=True, scale=2 ** 10):
 
 
 def coll_index_names(coll_obj):
-    return [i['key'][0][0] for i in coll_obj.index_information().values()]
+    return [i['key'][0][0] for i in list(coll_obj.index_information().values())]
 
 
 def coll_validate(coll_obj, scandata=False, full=False):
@@ -49,8 +49,9 @@ def coll_range(coll_obj, field_name="_id"):
     projection = {} if field_name == '_id' else {'_id': 0, field_name: 1}  # make sure we get just ONE field
     idMin = coll_obj.find_one(sort=[(field_name, 1)], projection=projection)
     if idMin:
-        idMin = idMin.values()[0]
-        idMax = coll_obj.find_one(sort=[(field_name, -1)], projection=projection).values()[0]
+        idMin = list(idMin.values())[0]
+        idMax = coll_obj.find_one(sort=[(field_name, -1)], projection=projection)
+        idMax = list(idMax.values())[0]
         return idMin, idMax
     else:
         return None, None
@@ -92,7 +93,7 @@ def coll_chunks(collection, field_name="_id", chunk_size=100000):
     while cntChunk == 0 or curMax < idMax:
         nextChunk = collection.find_one({field_name: {"$gte": curMin}}, sort=[(field_name, 1)],
                                         skip=chunk_size, projection=projection)
-        curMax = nextChunk.values()[0] if nextChunk else idMax
+        curMax = list(nextChunk.values())[0] if nextChunk else idMax
         query = {field_name: {"$gte" if cntChunk == 0 else "$gt": curMin, "$lte": curMax}}
         yield cntChunk, query
         cntChunk += 1
@@ -129,12 +130,12 @@ def coll_update_id(coll_obj, doc, new_id):
 
 
 def coll_copy(collObjFrom, collObjTarget, filter_dict={},
-              create_indexes=False, dropTarget=False, write_options= {}, verbose=10):
+              create_indexes=False, dropTarget=False, write_options={}, verbose=10):
     """copies a collection using unordered bulk inserts
     similar to `copyTo <http://docs.mongodb.org/manual/reference/method/db.collection.copyTo/>`_ that is now deprecated
 
     :Parameters:
-        - collObjFrom: 
+        - collObjFrom:
         - collObjTarget: destination collection
         - filter_dict: a pymongo query dictionary to specify which documents to copy (defaults to {})
         - create_indexes: creates same indexes on destination collection if True
@@ -144,13 +145,13 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
     """
     frmt_stats = "copying {:6.2f}% done  documents={:20,d} of {:20,d}"
     if verbose > 0:
-        print ("copy_collection:{} to {}".format(collObjFrom.name, collObjTarget.name))
+        print("copy_collection:{} to {}".format(collObjFrom.name, collObjTarget.name))
     if dropTarget:
         collObjTarget.drop()
     docs = collObjFrom.find(filter_dict)
     totalRecords = collObjFrom.count() if filter_dict == {} else docs.count()
     if verbose > 0:
-        print ("totalRecords", totalRecords)
+        print("totalRecords", totalRecords)
     perc_done_last = -1
     bulk = collObjTarget.initialize_unordered_bulk_op()
     cnt = 0
@@ -159,18 +160,18 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
         if verbose > 0:
             perc_done = round((cnt + 1.0) / totalRecords, 3) * 100
             if perc_done != perc_done_last and perc_done % verbose == 0:
-                print (frmt_stats.format(perc_done, cnt, totalRecords))
+                print(frmt_stats.format(perc_done, cnt, totalRecords))
                 perc_done_last = perc_done
         bulk.insert(doc)
         if cnt % 20000 == 0 or cnt == totalRecords:
             bulk.execute(write_options)
             bulk = collObjTarget.initialize_unordered_bulk_op()
     if create_indexes:
-        for k, v in collObjFrom.index_information().iteritems():
+        for k, v in list(collObjFrom.index_information().items()):
             if k != "_id_":
                 idx = (v['key'][0])
                 if verbose > 0:
-                    print ("creating index {:s}".format(k))
+                    print("creating index {:s}".format(k))
                 collObjTarget.create_index([idx], backgound=True)
     return collObjTarget
 
@@ -331,7 +332,7 @@ def pp_doc(doc, indent=4, sort_keys=False, verbose=True):
     """pretty print a boson document"""
     rt = json_util.dumps(doc, sort_keys=sort_keys, indent=indent, separators=(',', ': '))
     if verbose:
-        print (rt)
+        print(rt)
     return rt
 
 

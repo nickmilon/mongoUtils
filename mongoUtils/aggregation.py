@@ -26,7 +26,7 @@ class Aggregation(object):
         >>> print(aggr_obj.code(False))                                                        # print pipeline
         [{"$match": {"lang": "en"}},{"$group": {"avg_followers":
         {"$avg": "$followers_count"},"_id": null}}]
-        >>> aggr_obj().next()                                                                  # execute and get results
+        >>> next(aggr_obj())                                                                  # execute and get results
         {u'avg_followers': 2943.8210227272725, u'_id': None})                                  # results
      """                                             # executes aggregation
     _operators = 'project match redact limit skip sort unwind group out geoNear'.split(' ')
@@ -48,7 +48,7 @@ class Aggregation(object):
     @classmethod
     def help(cls, what='operators'):
         """returns list of available operators"""
-        print (cls._operators)
+        print(cls._operators)
 
     def add(self, operator, value, position=None):
         """adds an operation at specified position in pipeline"""
@@ -60,7 +60,7 @@ class Aggregation(object):
         """returns (position, operator"""
         cnt = 0
         for i, item in enumerate(self.pipeline):
-            if item.keys()[0] == operator:
+            if list(item.keys())[0] == operator:
                 cnt += 1
                 if cnt == count:
                     return (i, item)

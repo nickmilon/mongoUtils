@@ -7,6 +7,7 @@
 import unittest
 import gzip
 import json
+import codecs
 
 from mongoUtils.client import muClient
 from mongoUtils.configuration import testDbConStr
@@ -41,8 +42,11 @@ class Test(unittest.TestCase):
         pass
 
     def test_01_importsample(self):
-        with gzip.open(_PATH_TO_DATA + "muTest_tweets.json .gz", 'rb') as fin:
-            tweets_sample = json.load(fin)
+        with gzip.open(_PATH_TO_DATA + "muTest_tweets.json .gz", 'rb') as fin: 
+            reader = codecs.getreader("utf-8")
+            # read through reader for python3 see
+            # http://stackoverflow.com/questions/6862770/python-3-let-json-object-accept-bytes-or-let-urlopen-output-strings
+            tweets_sample = json.load(reader(fin))
         self.db.drop_collections_startingwith(['muTest_', 'del_'])
 #         for  i in tweets_sample:
 #             print i
@@ -71,9 +75,9 @@ class Test(unittest.TestCase):
         aggr_obj = Aggregation(self.db.muTest_tweets_users, allowDiskUse=True)
         aggr_obj.match({'lang': 'en'})
         aggr_obj.group({'_id': None, "avg_followers": {"$avg": "$followers_count"}})
-        res = aggr_obj().next()
+        res = next(aggr_obj())
         self.assertAlmostEqual(res['avg_followers'], 2943.8, 1, "wrong aggregation average")
-        res = AggrCounts(self.db.muTest_tweets_users, "lang",  sort={'count': -1})().next()
+        res = next(AggrCounts(self.db.muTest_tweets_users, "lang",  sort={'count': -1})())
         self.assertEqual(res['count'], 352, "wrong aggregation count")
 
     def test_mapreduce(self):

@@ -198,7 +198,7 @@ class PubSub(object):
             # print ("cursor {} {}".format(cursor.alive, self.__stop))
             while cursor.alive and self._continue:
                 try:
-                    doc = cursor.next()
+                    doc = next(cursor)
                     if doc['ackn'] == 0 or self._acknowledge(doc):
                         self._counters_set(doc['_id'])
                         yield doc

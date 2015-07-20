@@ -100,7 +100,7 @@ def schema(collection,
         totalCnt += cnt
     if verbose > 0:
         print ("creating indexes")
-    rt[0].ensure_index('_id.type', background=True)
+    rt[0].create_index('_id.type', background=True)
     if meta:
         rtMeta = schema_meta(rt, verbose=verbose)
         return rt, rtMeta
