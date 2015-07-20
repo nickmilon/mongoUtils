@@ -14,31 +14,30 @@ from Hellas.Pella import dict_copy
 class PubSub(object):
     """**generic class for Publishing/Subscribing  to a capped collection
     useful for implementing task-message queues and oplog tailing**
-
-    https://softwaremill.com/mqperf/
-
+    `see here <https://softwaremill.com/mqperf/>`_
     it can also be used with non capped collections except it must use polling instead of a tailing cursor
     collection **must** include a **ts** field for compatibility with oplog collections
     until it has at least one document stored
     i.e. to view your local  see: example test_SubToCappedOptLog
     to replay oplog collection: set database to 'local' and collection to 'oplog.rs'
 
-    .. Warning:: Make sure you DO NOT attempt writing to oplog collection
-                also you understand potential side effects as described 
-                `here <https://www.mongodb.com/blog/post/pitfalls-and-workarounds-for-tailing-the-oplog-on-a-mongodb-sharded-cluster>`_
+    .. Warning:: In case you use this class to tail the oplog
+                    Make sure you DO NOT attempt writing to oplog collection
+                    and also that you understand potential side effects as described
+                    `here <https://www.mongodb.com/blog/post/\
+                    pitfalls-and-workarounds-for-tailing-the-oplog-on-a-mongodb-sharded-cluster>`_
 
     .. Seealso:: more info `here <http://blog.pythonisito.com/2013/04/mongodb-pubsub-with-capped-collections.html>`__
-        and `here <https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py>`__
+                 and `here <https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py>`__
 
-    :Args:
-
-    - collection_or_name: (obj or str) a pymongo collection or a string
-    - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
-    - name:    (str) collection name a name for this instance if not given defaults to db.name|collection.name
-    - capped:  (bool optional) set to True for to get a capped collection
-    - reset:   (bool) drops & recreates collection and resets id counters if True
-    - size:    (int) capped collection size in bytes
-    - max_docs:(int) capped collection max documents count
+    :Parameters:
+        - collection_or_name: (obj or str) a pymongo collection or a string
+        - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
+        - name:    (str) collection name a name for this instance if not given defaults to db.name|collection.name
+        - capped:  (bool optional) set to True for to get a capped collection
+        - reset:   (bool) drops & recreates collection and resets id counters if True
+        - size:    (int) capped collection size in bytes
+        - max_docs:(int) capped collection max documents count
     """
 
     #===============================================================================
@@ -148,9 +147,10 @@ class PubSub(object):
         return self.pubsub_col.insert(doc, **kwargs)
 
     def pub(self, topic, verb, payload, target=None, state=0, ackn=0, async=False, **kwargs):
-        """Parameters:
-        ackn: (int) request acknowledgement (by incrementing state)
-        0=no acknowledge, > 0 acknowledge
+        """
+        :Parameters:
+            - ackn: (int) request acknowledgement (by incrementing state)
+                - 0=no acknowledge, > 0 acknowledge
         """
         if async:
             return Greenlet.spawn(self._pub, topic, verb, payload, target, state, ackn, **kwargs)
@@ -164,9 +164,9 @@ class PubSub(object):
 
     def sub_poll(self, topic=None, verb=None, target=True, state=0,
                  fields=None, start_after='last'):
-        """ subscribe by poll
-            in case collection is not capped or when response time is not critical,
-            instead of a tailing cursor we can use poll
+        """subscribe by poll
+        in case collection is not capped or when response time is not critical,
+        instead of a tailing cursor we can use poll
         """
         @auto_retry(AutoReconnect, 6, 0.5, 1)
         def next_batch():

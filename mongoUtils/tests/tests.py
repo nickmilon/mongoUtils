@@ -11,16 +11,8 @@ import json
 from mongoUtils.client import muClient
 from mongoUtils.configuration import testDbConStr
 from mongoUtils import _PATH_TO_DATA
-from mongoUtils import importsExports
-from mongoUtils import mapreduce
+from mongoUtils import importsExports, mapreduce, schema, helpers
 from mongoUtils.aggregation import AggrCounts, Aggregation
-
-#     with gzip.open(_PATH_TO_DATA + "tweets_sample_10000.json.gz", 'rb') as fin:
-#         cls.tweets_sample = simplejson.load(fin)
-#     for i in range(0, len(cls.tweets_sample)):
-#         cls.tweets_sample[i]['_aux'] = {'SeqGlobal': i}
-#     cls.tweets_sample = [simplejson.dumps(doc) for doc in cls.tweets_sample]
-#     cls.tweets_sample_len = len(cls.tweets_sample)
 
 
 try:
@@ -51,11 +43,12 @@ class Test(unittest.TestCase):
     def test_01_importsample(self):
         with gzip.open(_PATH_TO_DATA + "muTest_tweets.json .gz", 'rb') as fin:
             tweets_sample = json.load(fin)
-        self.db.drop_collections_startingwith(['muTest_tweets'])
+        self.db.drop_collections_startingwith(['muTest_', 'del_'])
 #         for  i in tweets_sample:
 #             print i
 #             self.db.muTest_tweets1000.insert(i)
         self.db.muTest_tweets.insert_many(tweets_sample)
+        self.db.muTest_tweets.create_index([('user.screen_name', 1)], background=True) 
         cnt = self.db.muTest_tweets.find().count()
         self.assertEqual(cnt, 1000, str(cnt) + " only records written to db instead of 1000")
         l = []
@@ -98,6 +91,33 @@ class Test(unittest.TestCase):
                             col_b_key='screen_name', col_b_query={'screen_name': {'$ne': 'Albert000G'}}, verbose=0)
         res = res[0].find_one({'value.b': None})['value']['a']['user']['screen_name']
         self.assertEqual(res, 'Albert000G', "wrong aggregation mr2 result")
+
+    def test_schema(self):
+        r = schema.schema(self.db.muTest_tweets_users, meta=True, verbose=0)
+        fields = r[0][0].find()[0]['value']['fields']
+        self.assertTrue('_id' in fields, "_id not found in schema")
+
+    def test_helpers_coll_range(self):
+        """get min max of a collection field"""
+        res = helpers.coll_range(self.db.muTest_tweets_users, 'id_str')
+        self.assertEqual(res[1], '999314042', "wrong coll_range results")
+
+    def test_helpers_coll_copy(self):
+        res = helpers.coll_copy(self.db.muTest_tweets, self.db['muTest_tweets_copy'],
+                                create_indexes=True, dropTarget=True, write_options={}, verbose=0)
+        self.assertEqual(res.count(), self.db.muTest_tweets.count(), "error in coll_copy")
+
+    def test_helpers_coll_chunks(self):
+        """guarantees that all documents are fetched and no overlaps occur
+        """
+        doc_count = self.db.muTest_tweets.count()
+        res = helpers.coll_chunks(self.db.muTest_tweets, '_id', 0.3)
+        out_lst = []
+        for i in res:
+            out_lst.extend([i['_id'] for i in self.db.muTest_tweets.find(i[1], projection={})])
+        out_lst = set(out_lst)
+        self.assertEqual(len(out_lst), doc_count, "wrong coll_chunks ranges or overlaps occurred")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,16 +3,23 @@ Created on Feb 24, 2013
 @author: nickmilon
 see: https://docs.python.org/2/distutils/setupscript.html
 """
+#######################
+import re
+import os
 from setuptools import setup, find_packages
-version = '0.1.1'
+cur_path = os.path.dirname(os.path.realpath(__file__))
+read_init = open(cur_path+'/mongoUtils/__init__.py').read()
+__version__ = re.search("__version__\s*=\s*'(.*)'", read_init, re.M).group(1)
+__author__ = re.search("__author__\s*=\s*'(.*)'", read_init, re.M).group(1)
 print 'packages', find_packages()
+######################
 setup(
     packages=find_packages(),
     # package_data={'mongoUtils': ['js/*.js']},
-    package_data={'mongoUtils': ['../js|data/*.*']},
+    package_data={'mongoUtils': ['../js*.*', '../data/*.*']},
     name="mongoUtils",
-    version=version,
-    author="nickmilon",
+    version=__version__,
+    author=__author__,
     author_email="nickmilon/gmail/com",
     maintainer="nickmilon",
     maintainer_email="nickmilon/gmail/com",
@@ -32,7 +39,7 @@ setup(
         "Programming Language :: Python :: 3.4",
         "Topic :: Database"],
     license="MIT or Apache License, Version 2.0",
-    keywords=["mongo", "mongodb", "pymongo", "mongo utilities", 'database'],
+    keywords=["mongo", "mongodb", "pymongo", "mongo utilities", 'database', 'nosql', 'big data'],
     # requirements and specs
     zip_safe=False,
     tests_require=["nose"],

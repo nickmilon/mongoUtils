@@ -22,6 +22,7 @@ def schema(collection,
     :Parameters:
         - collection: a mongoDB collection
         - query: a pymongo query dictionary to filter documents that will be searched
+          to a subset of a collection (useful for large collections)
         - out: map reduce output specificatins dictionary (see see :func:`~.mr` function
           except for it can't be inline
         - meta: if True results are passed to :func:`schema_meta` function for analysis
@@ -159,8 +160,11 @@ def schema_exclude_parents(fields_list, as_string=True):
     :Returns:
       - last level elements of fields_list
     :Example:
-        >>> res = schema(a_collection )
-        >>> res.value.fields
+        >>> res, stats = sch.schema(db.muTest_tweets_users,verbose=0)
+        >>> res['value']['fields']
+        ['_id', '_id.str', 'contributors_enabled', 'created_at', 'default_profile' .... ]
+        >>> schema_exclude_parents(res['value']['fields'])
+        '_id.str,contributors_enabled,created_at,default_profile,default_profile_image ...
     """
     def is_parent(item):
         return len([i for i in fields_list if i.startswith(item+'.')]) > 0
@@ -170,9 +174,18 @@ def schema_exclude_parents(fields_list, as_string=True):
 
 def mongoexport_fields(file_path, collection, query={}, excl_fields_lst=[]):
     """exports all field names except excl_fields_lst to a file
+
+    :Parameters:
+        - file_path: (str) path to output file
+        - collection: a pymongo collection object
+        - query: a pymongo query dictionary (optional) to restrict fields discovery
+          to a subset of a collection (useful for large collections)
+        - excl_fields_lst: (list) field names to exclude from output
+    :Example:
+        >>> mongoexport_fields("/path_to_file", db.muTest_tweets_users,  excl_fields_lst=['_id'])
     """
-    r = schema(collection, query={'_id': 1},  verbose=0)
-    r = schema_exclude_parents(r[0].find()[0].value.fields, as_string=False)
+    r = schema(collection, query=query,  verbose=0)
+    r = schema_exclude_parents(r[0].find()[0]['value']['fields'], as_string=False)
     with open(file_path, "w") as fout:
         for i in r:
             fout.write(i + "\n")
