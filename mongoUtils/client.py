@@ -1,5 +1,6 @@
 """ MongoDB client"""
 from pymongo import MongoClient
+from pymongo.errors import ConfigurationError
 from mongoUtils.helpers import (muDatabase, pp_doc, client_schema)
 from Hellas.Sparta import DotDot
 
@@ -9,37 +10,42 @@ class muClient(MongoClient):
     use it within a with statement or else call close() when instance is not needed any more see
     `mongo_client <http://api.mongodb.org/python/current/api/pymongo/mongo_client.html>`__
 
-    :Parameters: see here http://api.mongodb.org/python/current/api/pymongo/mongo_client.html
+    :Property: db instances are initialized with a default property self.db pointing to the database
+               if one is included in connection string otherwise it's value is None
+               appls can set it by calling the :func:`use` method
+
+    ..Warning:: for efficiency this class descents from MongoClient and shares the way it uses
+                class name space. So be very careful when defining methods names in descendant classes to
+                avoid masking potential database names to be addressed by pymongo's dot notation
+                so client.nodes can't refer to a database coz it is the name of a method in pymongo
+                if you have to refer to nodes as database use the client[nodes] form
+
+    :Parameters: `see here <http://api.mongodb.org/python/current/api/pymongo/mongo_client.html>`__
+
     """
     def __init__(self, *args, **kwargs):
         super(muClient, self).__init__(*args, **kwargs)
-        self.mu_init_complete()
+        try:
+            self.db = self.get_default_database()
+        except ConfigurationError as e:
+            if e.message == 'No default database defined':
+                self.db = None
+            else:
+                raise
+        self.cl_init_complete()
 
-    def colstats(self, details=2, verbose=True):
+    def cl_colstats(self, details=2, verbose=True):
         rt = DotDot([[d, self[d].collstats(details, False)] for d in self.database_names()])
         pp_doc(rt, sort_keys=False, verbose=verbose)
- 
-    def _get_MongoClient(self, *args, **kwargs):
-        return MongoClient(*args, **kwargs)
 
-    def schema(self, details=1, verbose=True):
+    def cl_schema(self, details=1, verbose=True):
         return client_schema(self, details, verbose)
-
-    @property
-    def db(self):
-        return self._db
-
-    @db.setter
-    def db(self, db_name):
-        """sets a defualt db"""
-        if self.client:
-            self._db = self.client[db_name]
 
     def use(self, db_name):
         """mimics use console command"""
-        self.db = db_name
+        self.db = self[db_name]
 
-    def db_set(self, name, codec_options=None, read_preference=None, write_concern=None):
+    def cl_db_set(self, name, codec_options=None, read_preference=None, write_concern=None):
         """returns a database with specified options"""
         self.db = self.get_database(name,
                                     codec_options=codec_options,
@@ -47,7 +53,7 @@ class muClient(MongoClient):
                                     write_concern=write_concern)
         return self.db
 
-    def mu_init_complete(self):
+    def cl_init_complete(self):
         """override in subclasses to initialize things i.e:
 
         >>> self.users=self.db['users']

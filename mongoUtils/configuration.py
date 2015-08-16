@@ -18,6 +18,7 @@ testDbConStr = "mongodb://localhost:27017/mongoUtilsTests"
 
 TEST_CLIENT = None
 
+
 def get_dbtest():
     """returns test db"""
     global TEST_CLIENT

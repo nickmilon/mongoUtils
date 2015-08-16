@@ -14,7 +14,7 @@ from mongoUtils.configuration import testDbConStr
 from mongoUtils import _PATH_TO_DATA
 from mongoUtils import importsExports, mapreduce, schema, helpers
 from mongoUtils.aggregation import AggrCounts, Aggregation
-
+from mongoUtils.tests.PubSubBench import ps_tests
 
 try:
     import xlrd
@@ -42,7 +42,7 @@ class Test(unittest.TestCase):
         pass
 
     def test_01_importsample(self):
-        with gzip.open(_PATH_TO_DATA + "muTest_tweets.json .gz", 'rb') as fin: 
+        with gzip.open(_PATH_TO_DATA + "muTest_tweets.json .gz", 'rb') as fin:
             reader = codecs.getreader("utf-8")
             # read through reader for python3 see
             # http://stackoverflow.com/questions/6862770/python-3-let-json-object-accept-bytes-or-let-urlopen-output-strings
@@ -122,6 +122,13 @@ class Test(unittest.TestCase):
         out_lst = set(out_lst)
         self.assertEqual(len(out_lst), doc_count, "wrong coll_chunks ranges or overlaps occurred")
 
+    def test_pubsub(self):
+        res = ps_tests('speed', testDbConStr)
+        self.assertGreater(res.msgsPerSecPub, 1000, "message publishing too slow")
+        self.assertGreater(res.msgsPerSecSub, 1000, "message reading too slow")
+        res = ps_tests('speedThread', testDbConStr)
+        self.assertGreater(res.msgsPerSec, 500, "message absorption too slow")
+        self.assertEqual(res.msgs, 2000, "messages skipped")
 
 if __name__ == "__main__":
     unittest.main()

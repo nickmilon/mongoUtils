@@ -2,6 +2,7 @@
 
 from mongoUtils.helpers import pp_doc
 from pymongo.command_cursor import CommandCursor
+from bson.son import SON
 
 
 class Aggregation(object):
@@ -16,7 +17,7 @@ class Aggregation(object):
     :returns: an aggregation object
 
     :Example:
-        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr  # import MongoClient 
+        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr  # import MongoClient
         >>> db = MongoClient(testDbConStr).get_default_database()                              # get test database
         >>> aggr_obj = Aggregation(db.muTest_tweets_users, allowDiskUse=True)                  # select users collection
         >>> aggr_obj.help()                                                                    # ask for help
@@ -26,10 +27,11 @@ class Aggregation(object):
         >>> print(aggr_obj.code(False))                                                        # print pipeline
         [{"$match": {"lang": "en"}},{"$group": {"avg_followers":
         {"$avg": "$followers_count"},"_id": null}}]
-        >>> next(aggr_obj())                                                                  # execute and get results
+        >>> next(aggr_obj())                                                                   # execute and get results
         {u'avg_followers': 2943.8210227272725, u'_id': None})                                  # results
      """                                             # executes aggregation
     _operators = 'project match redact limit skip sort unwind group out geoNear'.split(' ')
+    _frmt_str = "{}\nstage#= {:2d}, operation={}"
 
     def __init__(self, collection, pipeline=None, **kwargs):
         def _makefun(name):
@@ -39,6 +41,33 @@ class Aggregation(object):
         self._pll = pipeline or []      # pipeline list
         for item in self._operators:    # auto build functions for operators
             _makefun(item)
+
+    @classmethod
+    def construct_fields(cls, fields_list=[]):
+        """a constructor for fields
+        """
+        return SON([(i.replace('.', '_'), '$'+i) for i in fields_list])
+
+    @classmethod
+    def construct_stats(cls, fields_lst, _id=None, stats=['avg', 'max', 'min'], incl_count=True):
+        """a constructor helper for group statistics
+
+        :Parameters:
+            - fields_lst: (list) list of field names
+            - stats: (list) list of statistics
+            - incl_count: (Bool) includes a count if True
+        :Example:
+            >>> specs_stats(['foo'])
+            {'max_foo': {'$max': '$foo'}, '_id': None, 'avg_foo': {'$avg': '$foo'}, 'min_foo': {'$min': '$foo'}}
+        """
+        frmt_field_stats = "{}_{}"
+        res = {}
+        for field in fields_lst:
+            res.update({frmt_field_stats.format(i, field): {'$'+i: '$'+field} for i in stats})
+        if incl_count:
+            res.update({'count': {'$sum': 1}})
+        res.update({'_id': _id})
+        return res
 
     @property
     def pipeline(self):
@@ -77,22 +106,32 @@ class Aggregation(object):
     def code(self, verbose=True):
         return pp_doc(self.pipeline, 4, sort_keys=False, verbose=verbose)
 
-    def __call__(self, verbose=False, **kwargs):
+    def clear(self):
+        self._ppl = []
+
+    def __call__(self, print_n=None, **kwargs):
         """perform the aggregation when called
         >>> Aggregation_object()
 
-        `for kwargs see: <http://api.mongodb.org/python/current/api/pymongo/collection.html?highlight=aggregate/>`_
+        for kwargs see: `aggregate <http://api.mongodb.org/python/current/api/pymongo/collection.html>`_
 
-        :param bool verbose: if True will print results but return None
-        :param dict kwargs: if any of kwargs are specified override any arguments provided on instance initialization.
+        :Parameters:
+            - print_n:
+                - True: will print results and will return None
+                - None: will cancel result printing
+                - int: will print top n documents
+            -  kwargs: if any of kwargs are specified override any arguments provided on instance initialization.
         """
         tmp_kw = self._kwargs.copy()
         tmp_kw.update(kwargs)
         rt = self._collection.aggregate(self.pipeline, **tmp_kw)
-        if verbose:
+        if print_n is not None:
+            print (self._frmt_str.format("--" * 40, len(self.pipeline), str(self.pipeline[-1])))
             if isinstance(rt, CommandCursor):
-                for doc in rt:
+                for cnt, doc in enumerate(rt):
                     print (doc)
+                    if print_n is not True and cnt+2 > print_n:
+                        break
                 return None
             else:
                 print (rt)
@@ -110,7 +149,7 @@ class AggrCounts(Aggregation):
     :param dict kwargs: optional arguments to pass to parent :class:`~Aggregation`
 
     :Example:
-        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr  # import MongoClient 
+        >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr  # import MongoClient
         >>> db = MongoClient(testDbConStr).get_default_database()                              # get test database
         >>> AggrCounts(db.muTest_tweets_users, "lang",  sort={'count': -1})(verbose=True)      # counts by language
         {u'count': 352, u'_id': u'en'}

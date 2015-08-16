@@ -24,9 +24,11 @@ ____
 ____
 
 :Dependencies:
- - `pymongo <http://api.mongodb.org/python/current/>`__ (installed automatically by setup)
- - `Hellas <http://miloncdn.appspot.com/docs/Hellas/index.html>`_ (installed automatically by setup) a small python utilities library
- - `xlrd library <https://pypi.python.org/pypi/xlrd>`_  (used only for importing Excel workbooks into mongo >>> pip install xlrd)
+   - `pymongo <http://api.mongodb.org/python/current/>`__ (installed automatically by setup)
+   - `Hellas <http://miloncdn.appspot.com/docs/Hellas/index.html>`_ (installed automatically by setup) a lightweight python utilities library of mine
+   - `gevent <http://www.gevent.org/gevent.html>`_ (optional) not a prerequisite but will be used by pyMongo if installed 
+   - `Greenlet <https://pypi.python.org/pypi/greenlet>`_   (optional used in :class:`~.pubsub.PubSub` class for async operations)  
+   - `xlrd library <https://pypi.python.org/pypi/xlrd>`_  (optional used only for importing Excel workbooks into mongo >>> pip install xlrd)
 
 ____
 

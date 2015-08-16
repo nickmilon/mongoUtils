@@ -1,11 +1,18 @@
 """some helper functions and classes"""
 
+import logging
+from datetime import datetime
 from Hellas.Sparta import DotDot
-from bson import json_util
+from bson import json_util, SON
 from mongoUtils import _PATH_TO_JS
 from pymongo.read_preferences import ReadPreference
 from pymongo.collection import Collection
 from pymongo.database import Database
+from pymongo import ReturnDocument
+from pymongo.bulk import BulkOperationBuilder
+
+LOG = logging.getLogger(__name__)
+LOG.debug("loading module: " + __name__)
 
 
 class MongoUtilsError(Exception):
@@ -68,7 +75,7 @@ def coll_chunks(collection, field_name="_id", chunk_size=100000):
         - collection: (obj) a pymongo collection instance
         - field_name: (str) the collection field to use, defaults to _id, all documents in
            this field must be indexed otherwise operation will be slow,
-           also collection must have a value for this field 
+           also collection must have a value for this field
         -  chunk_size: (int or float)  (defaults to 100000)
             - if int requested  number of documents in each chunk
             - if float (< 1.0) percent of total documents in collection i.e if 0.2 means 20%
@@ -108,7 +115,7 @@ def coll_update_id(coll_obj, doc, new_id):
                  | Also be careful on swallow copies
 
     :Parameters:
-        - coll_obj: a pymongo collection 
+        - coll_obj: a pymongo collection
         - doc: document_to rewrite with a new_id
         - new_id: value of new id
     :Returns:  a tuple
@@ -153,7 +160,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
     if verbose > 0:
         print("totalRecords", totalRecords)
     perc_done_last = -1
-    bulk = collObjTarget.initialize_unordered_bulk_op()
+    bulk = muBulkOps(collObjTarget, ordered=False, ae_n=1000, dwc={'w': "majority"})
     cnt = 0
     for doc in docs:
         cnt += 1
@@ -163,9 +170,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
                 print(frmt_stats.format(perc_done, cnt, totalRecords))
                 perc_done_last = perc_done
         bulk.insert(doc)
-        if cnt % 20000 == 0 or cnt == totalRecords:
-            bulk.execute(write_options)
-            bulk = collObjTarget.initialize_unordered_bulk_op()
+    bulk.execute_if_pending()
     if create_indexes:
         for k, v in list(collObjFrom.index_information().items()):
             if k != "_id_":
@@ -180,7 +185,7 @@ def db_capped_create(db, coll_name, sizeBytes=10000000, maxDocs=None, autoIndexI
     """create a capped collection
 
     :Parameters:
-        - `see here <http://api.mongodb.org/python/current/api/pymongo/database.html>`_ 
+        - `see here <http://api.mongodb.org/python/current/api/pymongo/database.html>`_
         - `and here <http://docs.mongodb.org/manual/reference/method/db.createCollection/>`_
     """
     if coll_name not in db.collection_names():
@@ -206,7 +211,7 @@ def db_capped_set_or_get(db, coll_name, sizeBytes=2 ** 30, maxDocs=None, autoInd
         return db.create_collection(coll_name, capped=True, size=sizeBytes,
                                     max=maxDocs, autoIndexId=autoIndexId)
     else:
-        capped_coll = self[coll_name]
+        capped_coll = db[coll_name]
         if not capped_coll.options().get('capped'):
             db.command({"convertToCapped": coll_name, 'size': sizeBytes})
         return capped_coll
@@ -231,6 +236,81 @@ def client_schema(client, details=1, verbose=True):
     if verbose:
         pp_doc(rt)
     return rt
+
+
+class muBulkOps(object):
+    """ a wrapper around BulkOperationBuilder provides for some automation
+
+    .. versionadded:: 1.0.6
+
+    :parameters:
+        - ae_n: (int) auto execute every n operations (defaults to 0 to refrain from auto execution)
+        - ae_s: (int) auto execute seconds since start or last execute before a new execute is automatically initiated
+          useful when we want to ensure that collection data are relative fresh
+          set it to 0 (default to disable auto execute b
+        - dwc: (dict) or None default write concern to use in case of autoexecute_every
+          DO NOT pass a WriteConcern object just a plain dict i.e {'w':1}
+    """
+    frmt_stats = "{:s}db:{:s} collection:{:s} cnt_operations_executed:{:16,d} cnt_operations_pending:{:6,d}"
+
+    def __init__(self, collection, ordered=True, ae_n=0, ae_s=0, dwc=None):
+        """Initialize a new BulkOperationBuilder instance."""
+        self.collection = collection
+        self.ordered = ordered
+        self.ae_n = ae_n
+        self.dwc = dwc
+        self.cnt_operations_pending = 0
+        self.cnt_operations_executed = 0
+        self.ae_n = ae_n
+        self.ae_s = ae_s
+        if ae_s != 0:
+            self.dt_last = datetime.now()
+        self._init_builder()
+
+    def _init_builder(self):
+        self._bob = BulkOperationBuilder(collection=self.collection, ordered=self.ordered)
+
+    def find(self, selector):
+        return self._bob.find(selector)
+
+#     def append(self, document):
+#         return self.insert(document)
+    def stats(self, message=''):
+        return self.frmt_stats.format(message, self.collection.database.name, self.collection.name,
+                                      self.cnt_operations_executed, self.cnt_operations_pending)
+
+    def stats_print(self):
+        print(self.stats())
+
+    def insert(self, document):
+        rt = self._bob.insert(document)
+        self.cnt_operations_pending += 1
+        # LOG.critical(self.stats("inserts"))
+        if self.ae_s != 0:
+            current_dt = datetime.now()
+            if self.cnt_operations_pending == self.ae_n or ((current_dt - self.dt_last).seconds > self.ae_s):
+                self.dt_last = current_dt
+                rt = self.execute(write_concern=self.dwc, recreate=True)
+        elif self.cnt_operations_pending == self.ae_n:
+            rt = self.execute(write_concern=self.dwc, recreate=True)
+        return rt
+
+    def execute(self, write_concern=None, recreate=True):
+        rt = self._bob.execute(write_concern=write_concern)
+        self.cnt_operations_executed += self.cnt_operations_pending
+        self.cnt_operations_pending = 0
+        if recreate:
+            self._init_builder()
+        return rt
+
+    def execute_if_pending(self, write_concern=None):
+        """executes if any pending operations still exist call it on error or something"""
+        if write_concern is None:
+            write_concern = self.dwc
+        if self.cnt_operations_pending > 0:
+            rt = self.execute(write_concern=self.dwc, recreate=True)
+            return rt
+# Collection.parallel_scan(self, num_cursors)
 
 
 class muCollection(Collection):
@@ -367,8 +447,8 @@ class AuxTools(object):
 
     def sequence_set(self, seq_name, val=1):
         """sets sequence's current value to val if doesn't exist it is created"""
-        return self.collection.find_and_modify({'_id': seq_name}, {'$set': {'val': val}},
-                                               upsert=True, new=True)['val']
+        return self.collection.find_one_and_update({'_id': seq_name}, {'$set': {'val': val}},
+                                                   upsert=True, return_document=ReturnDocument.AFTER)['val']
 
     def sequence_current(self, seq_name):
         """returns sequence's current value for particular name"""
@@ -377,15 +457,36 @@ class AuxTools(object):
 
     def sequence_next(self, seq_name, inc=1):
         """increments sequence's current value by incr, if doesn't exist sets initial value to incr"""
-        return self.collection.find_and_modify({'_id': seq_name}, {'$inc': {'val': inc}},
-                                               upsert=True, new=True)['val']
+        return self.collection.find_one_and_update({'_id': seq_name}, {'$inc': {'val': inc}},
+                                                   upsert=True, return_document=ReturnDocument.AFTER)['val']
+
+
+class SONDot(SON):
+    """
+    A SON class that can handle dot notation to access its members (useful when parsing JSON content)
+
+    :Example:
+        >>> son = SONDot([('foo', 'bar'), ('son2', SON([('son2foo', 'son2Bar')]))])
+        >>> son.son2.son2foo
+        son2Bar
+
+    .. Warning:: don't use dot notation for write operations  i.e son.foo = 'bar' **(it will fail silently !)**
+    """
+    def __getattr__(self, attr):
+        try:
+            item = self[attr]
+        except KeyError as e:
+            raise AttributeError(e)    # expected Error by pickle on __getstate__ etc
+        if isinstance(item, dict) and not isinstance(item, DotDot):
+            item = SONDot(item)
+        return item
 
 
 def parse_js(file_path, function_name, replace_vars=None):
     """
     | helper function to get a js function string from a file containing js functions
     | useful if we want to call js functions from python as in mongoDB map reduce.
-    | Function must be named starting in first column and end with '}' in first column 
+    | Function must be named starting in first column and end with '}' in first column
       (see relevant functions in js directory)
 
     :Parameters:
@@ -413,3 +514,24 @@ def parse_js(file_path, function_name, replace_vars=None):
 def parse_js_default(file_name, function_name, replace_vars=None):
     """fetch a js function on default directory from file_name (see :func:`parse_js`)"""
     return parse_js(_PATH_TO_JS+file_name, function_name, replace_vars)
+
+
+def geo_near_point_q(geo_field, Long_Lat, query={}, minDistance=None, maxDistance=None):
+    """geo near point query constructor
+
+    :Parameters:
+        - geo_field: (str) name of geo indexed field (i.e. location)
+        - Long_Lat: (tuple or list) [longitude, latitude]
+        - query: (dict) an other query specifications to be combined with geo query (defaults to {})
+        - minDistance: minimum distance in meters (defaults to None)
+        - maxDistance: up to distance in meters (defaults to None)
+
+    :Returns: query dictionary updated with geo specs
+    """
+    gq = {geo_field: {'$near': {'$geometry': {'type': 'Point', 'coordinates': Long_Lat}}}}
+    if minDistance is not None:
+        gq[geo_field]['$near']['$minDistance'] = minDistance
+    if maxDistance is not None:
+        gq[geo_field]['$near']['$maxDistance'] = maxDistance
+    query.update(gq)
+    return query
