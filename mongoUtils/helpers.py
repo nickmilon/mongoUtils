@@ -181,7 +181,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
     return collObjTarget
 
 
-def db_capped_create(db, coll_name, sizeBytes=10000000, maxDocs=None, autoIndexId=True):
+def db_capped_create(db, coll_name, sizeBytes=1024 * 1000 * 100, maxDocs=None, autoIndexId=True, **kwargs):
     """create a capped collection
 
     :Parameters:
@@ -190,7 +190,7 @@ def db_capped_create(db, coll_name, sizeBytes=10000000, maxDocs=None, autoIndexI
     """
     if coll_name not in db.collection_names():
         return db.create_collection(coll_name, capped=True, size=sizeBytes,
-                                    max=maxDocs, autoIndexId=autoIndexId)
+                                    max=maxDocs, autoIndexId=autoIndexId, **kwargs)
     else:
         raise CollectionExists(coll_name)
 
@@ -387,7 +387,7 @@ class muDatabase(Database):
         return colsToRemove
 
     def js_fun_add(self, fun_name, fun_str):
-        """adds a js function to database 
+        """adds a js function to database
         to use the function from mongo shell you have to execute db.loadServerScripts(); first
 
         :Parameters:
@@ -535,3 +535,39 @@ def geo_near_point_q(geo_field, Long_Lat, query={}, minDistance=None, maxDistanc
         gq[geo_field]['$near']['$maxDistance'] = maxDistance
     query.update(gq)
     return query
+
+
+def field_counts(collection, field, sort=True, incl_perc=True):
+    """a group counts function with functionality simillar to aggregation $group
+    it is more performant than aggregation or a map reduce equivelant when distinct values of field
+    are a small number < ~30 and field is indexed.
+
+    :Parameters:
+        - collection: a pymongo collection object
+        - field: (str) field name
+        - sort: (True) sort results by value if True
+        - incl_perc: (bool) include percentages if True
+    """
+    rt = [[v, collection.find({field: v}).count()] for v in collection.distinct(field)]
+    if incl_perc:
+        total = float(sum([i[1] for i in rt]))
+        for i in rt:
+            i.append(100.0 * (i[1]/total))
+    if sort:
+        rt = sorted(rt, key=lambda x: x[1])
+    return rt
+
+
+def collection_insert_dict(a_collection, a_dict, use_key_as_id=True):
+    """
+    inserts dictionary items into a collection using unordered bulk operation
+    :Parameters:
+        - a_collection: a pymongo collection object
+        - a_dict: a dict
+        - use_key_as_id: (bool) uses dictionaries keyw as _id
+    """
+    bulkops = muBulkOps(a_collection, ordered=False, ae_n=1000)
+    for k, v in a_dict.items():
+        bulkops.insert(dict(v, **{'_id': k}) if a_dict else v)
+    bulkops.execute_if_pending()
+    return a_collection

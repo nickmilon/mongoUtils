@@ -28,7 +28,7 @@ ____
    - `Hellas <http://miloncdn.appspot.com/docs/Hellas/index.html>`_ (installed automatically by setup) a lightweight python utilities library of mine
    - `gevent <http://www.gevent.org/gevent.html>`_ (optional) not a prerequisite but will be used by pyMongo if installed
    - `xlrd library <https://pypi.python.org/pypi/xlrd>`_  (optional used only for importing Excel workbooks into mongo to install it: 
-      >>> pip install xlrd)
+      >>> pip install xlrd
 
 ____
 

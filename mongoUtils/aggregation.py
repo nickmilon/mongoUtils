@@ -101,13 +101,13 @@ class Aggregation(object):
 
     def remove(self, position):
         """remove an element from pipeline list given its position"""
-        return self._ppl.remove(position)
+        del self._pll[position]
 
     def code(self, verbose=True):
         return pp_doc(self.pipeline, 4, sort_keys=False, verbose=verbose)
 
     def clear(self):
-        self._ppl = []
+        self._pll = []
 
     def __call__(self, print_n=None, **kwargs):
         """perform the aggregation when called

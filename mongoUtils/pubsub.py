@@ -1,4 +1,4 @@
-"""publish and/or subscribe to a collection 
+"""publish and/or subscribe to a collection
 """
 
 from datetime import datetime
@@ -120,7 +120,6 @@ class Sub(object):
             doc = self._collection.find_one(sort=[("$natural", -1)])
         elif start_from_last is False:
             doc = self._collection.find_one(sort=[("$natural", 1)])
-            # print "doc " * 2, doc
         else:  # then must be a value
             doc = self._collection.find_one({self._track_field: start_from_last})
         track_field_val = doc[self._track_field] if doc is not None else None
@@ -141,7 +140,7 @@ class Sub(object):
         query.update(self._init_query(start_from_last=start_from_last))
         if self._capped:
             cursor = self._collection.find(query, projection=projection,        # No hint for this type of cursor
-                                           cursor_type=CursorType.TAILABLE_AWAIT, oplog_replay=True)
+                                           cursor_type=CursorType.TAILABLE_AWAIT, oplog_replay=self._track_field == True)
         else:
             cursor = self._collection.find(query, projection=self.projection, sort=[('$natural', -1)])
             cursor.hint([('$natural', -1)])
@@ -171,7 +170,7 @@ class Sub(object):
             start_from_last = False
         while retry and self._continue:
             cursor = self._get_cursor(query, projection, start_from_last)
-            # print  ("cursor {} {}".format(cursor.alive, 'X2X2'))
+            # print  ("cursor {} {}".format(cursor.alive, 'X1X1'))
             while cursor.alive and self._continue:
                 try:
                     doc = next(cursor)
@@ -187,7 +186,7 @@ class Sub(object):
                 retry = False
         self.tail_exit(cursor)
 
-    def poll(self, query={}, projection=None, start_from_last=True, sleep_secs=1, filter_func=lambda x: x, limit=10):
+    def poll(self, query={}, projection=None, start_from_last=True, sleep_secs=1, filter_func=lambda x: x, limit=100):
         """
         subscribe by poll in case collection is not capped or when response time is not critical,
         instead of a tailing cursor we can use poll. Method is thread safe.
@@ -284,16 +283,35 @@ class PubSub(Sub):
         if reset:
             self.reset()
         a_collection = self._create_collection()
+        print "self._track_field" * 10
         super(PubSub, self).__init__(a_collection=a_collection, track_field='ts', name=name)
         if len(self._name) > self._max_name_len:
             raise MongoUtilsPubSubError("name can't be greater than {:2d} chars".format(self._max_name_len))
         a_collection.ensure_index("ts", background=True)
+        self._ackn_delay = 0
 
     def reset(self):
         """drops collection and resets sequence generator"""
         self.db.drop_collection(self._col_name)
         self.aux_tools.sequence_reset(self._col_name)
         self._collection = self._create_collection()
+
+    @property
+    def ackn_delay(self):
+        return self._ackn_delay
+
+    @ackn_delay.setter
+    def ackn_delay(self, millis=0):
+        """used by :meth:`_acknowledge_received` method.
+        Although subscriptions are somehow auto balancing,
+        this can be used as a throttling mechanism when more than one clients can compete for same message
+        setting it to a higher value when for example cpu activity is high increases the chances that the message will
+        be picked by an other instance possibly running in an other machine or process which is not overloaded
+
+        :Parameters:
+            - millis (int or float  >=0) in milliseconds
+        """
+        self.self._ackn_delay = millis
 
     def _create_collection(self):
         specs = self._coll_init_specs
@@ -312,16 +330,17 @@ class PubSub(Sub):
         return self._collection.find_one_and_update(fltr, up, upsert=False, return_document=ReturnDocument.AFTER)
 
     def _acknowledge_received(self, msg):
-        """marks doc as received
-        we check state to make sure than it was not picked by another client meanwhile
+        """marks doc as received we check state to make sure than it was not picked by another client meanwhile
         """
+        if self._ackn_delay > 0:
+            sleep(self._ackn_delay)
         fltr = {'_id': msg['_id'], 'status.state': MsgState.SENT}
         up = {'$set': {'status.state': MsgState.RECEIVED, 'dt.received': datetime.utcnow(),
                        'status.receivedBy': self._name}}
         return self._acknowledge(fltr, up)
 
     def _yield_doc(self, msg):
-        """descendants should check the doc and return None if don't want to yield it else the doc to yield"""
+        """descendants should check the doc and return None if don't want to yield it"""
         return msg if msg['ackn'] == Acknowledge.NO else self._acknowledge_received(msg)
 
     def acknowledge_done(self, msg, state=MsgState.SUCCES):

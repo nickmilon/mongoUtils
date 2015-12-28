@@ -49,7 +49,7 @@ class PubSubController():
 
     def monitor(self, seconds=30):
         pubsubstats = PubSubStats(self.pubsub._collection)
-        while self._continue_mon: 
+        while self._continue_mon:
             seconds_run = (datetime.datetime.utcnow() - self.dt_start).total_seconds()
             if seconds_run >= seconds:
                 self.stop()
@@ -89,12 +89,6 @@ class PubSubController():
                 self.pubsub.acknowledge_done(job, MsgState.SUCCES)
             sleep(0)
         self.pubsub.restart()
-
-    def monitor_jobs_done(self):
-        pass
-        self.tailjobs_done = self.pubsub.poll(topic=None, verb=None, target=None, projection=None, start_from_last=False, sleep_secs=0.1)
-        for job in self.tailjobs_done:
-            print "{}\n monitor_jobs_done {}\n{} ".format("-" * 50,  self.pubsub.msg_info(job) , "_" * 50)
 
     def stop(self):
         printif("stopping now")
