@@ -136,7 +136,7 @@ class Examples(object):
         ag(print_n)
 
         return ag
-    
+
     @classmethod
     def ex001(cls, print_n=10):
         cls.ex001_insertdocs(10000)

@@ -30,7 +30,7 @@ class Aggregation(object):
         >>> next(aggr_obj())                                                                   # execute and get results
         {u'avg_followers': 2943.8210227272725, u'_id': None})                                  # results
      """                                             # executes aggregation
-    _operators = 'project match redact limit skip sort unwind group out geoNear'.split(' ')
+    _operators = 'project match redact limit skip sort unwind group out geoNear indexStats lookup'.split(' ')
     _frmt_str = "{}\nstage#= {:2d}, operation={}"
 
     def __init__(self, collection, pipeline=None, **kwargs):
@@ -163,3 +163,20 @@ class AggrCounts(Aggregation):
         self.group({'_id': '$'+field, 'count': {'$sum': 1}})
         if sort is not None:
             self.sort(sort)
+
+
+class AggrCountsWithPerc(AggrCounts):
+    """
+    we calculate percentages in python coz its tricky to do it efficiently in one pass in AggrCounts since we can't get totals up-front
+    without exececuting the query
+    """
+    def results(self, round_perc=None):
+        res = [i for i in self()]
+        total = float(sum([i['count'] for i in res]))
+        for i in res:
+            perc = (i['count'] / total * 100)
+            if round_perc:
+                perc= round(perc, round_perc)
+            i['perc'] = perc
+        return res
+        

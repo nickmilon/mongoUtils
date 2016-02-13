@@ -15,7 +15,7 @@ print('installing packages', find_packages())
 ######################
 setup(
     packages=find_packages(),
-    package_data={'mongoUtils': ['../js*.*', '../data/*.*']},
+    package_data={'mongoUtils': ['../MRjs/*.*', '../data/*.*']},
     name="mongoUtils",
     version=__version__,
     author=__author__,

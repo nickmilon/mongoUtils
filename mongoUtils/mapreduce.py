@@ -23,7 +23,7 @@ def mr(
     query={},                   # a pymongo query dictionary to query coll defaults to {}
     out={"replace": 'mr_tmp'},  # output dict {'replace'|'merge'|'reduce'|'inline':collection_name|'database':db_name}
     fun_finalize=None,          # js function to run on finalize
-    scope={},                   # vars available during map-reduce-finalize
+    scope={},                   # vars available during map-reduce
     sort=None,                  # i.e: sort= { "_id":1 } short dict to sort before map
     jsMode=False,               # True|False (don't convert to Bson between map & reduce if True)
     verbose=1                   # if 1 includes timing info on output if 2,3  more details
