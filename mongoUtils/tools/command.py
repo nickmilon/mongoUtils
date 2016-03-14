@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-a command line tools tha
+a command line tools
     - tail simulates tail -f  command to tail documents coming in a mongoDB collection
     - import imports worksheet o workbook into a db
 

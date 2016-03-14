@@ -2,7 +2,7 @@
 """
 
 from datetime import datetime
-from pymongo.errors import AutoReconnect
+from pymongo.errors import AutoReconnect, NotMasterError
 from pymongo.cursor import CursorType
 from pymongo import collection, ReturnDocument
 from bson.objectid import ObjectId
@@ -12,6 +12,7 @@ from mongoUtils.helpers import AuxTools, db_capped_set_or_get, MongoUtilsError
 from mongoUtils.aggregation import Aggregation
 from Hellas.Delphi import auto_retry
 from Hellas.Sparta import DotDot, EnumLabels
+from pip._vendor.html5lib.treewalkers import pprint
 
 
 class MsgState(EnumLabels):
@@ -136,11 +137,11 @@ class Sub(object):
         projection.update({self._track_field: 1})
         return projection
 
-    def _get_cursor(self,  query={}, projection=None, start_from_last=True):
+    def _get_cursor(self, query={}, projection=None, start_from_last=True):
         query.update(self._init_query(start_from_last=start_from_last))
         if self._capped:
             cursor = self._collection.find(query, projection=projection,        # No hint for this type of cursor
-                                           cursor_type=CursorType.TAILABLE_AWAIT, oplog_replay=self._track_field == True)
+                                           cursor_type=CursorType.TAILABLE_AWAIT, oplog_replay=self._track_field is True)
         else:
             cursor = self._collection.find(query, projection=self.projection, sort=[('$natural', -1)])
             cursor.hint([('$natural', -1)])
@@ -148,8 +149,8 @@ class Sub(object):
                 cursor.skip(cursor.count())
         return cursor
 
-    @auto_retry(AutoReconnect, 6, 0.5, 1)
-    def tail(self, query, projection=None, start_from_last=True, sleep_secs=0.001, filter_func=lambda x: x):
+    @auto_retry((AutoReconnect, NotMasterError) , 6, 0.5, 1)
+    def tail(self, query, projection=None, start_from_last=True, sleep_secs=0.1, filter_func=lambda x: x):
         """
         subscribe to a capped collection via a tailing cursor. Method is thread safe.
         :Parameters:
@@ -239,7 +240,7 @@ class Sub(object):
 
 
 class PubSub(Sub):
-    """**generic class for Publishing/Subscribing to a collection**
+    """**generic class for Publishing/Subscribing (message queue)  to a collection  **
 
     `see here <https://softwaremill.com/mqperf/>`_
     it can also be used with non capped collections except it must use polling instead of a tailing cursor
@@ -264,7 +265,7 @@ class PubSub(Sub):
         - max_docs:(int) capped collection max documents count
     """
     _max_name_len = 32
-    _reserve_name = " " * _max_name_len  # reserved bytes in a document to ensure it will not grow
+    _reserve_name = " " * _max_name_len  # reserved bytes in a document to ensure it will not change size
     _dt_frmt_info = "{} {:%Y-%m-%d %H:%M:%S %f}"
 
     def __init__(self, collection_or_name, db=None, name=None,
@@ -283,7 +284,6 @@ class PubSub(Sub):
         if reset:
             self.reset()
         a_collection = self._create_collection()
-        print "self._track_field" * 10
         super(PubSub, self).__init__(a_collection=a_collection, track_field='ts', name=name)
         if len(self._name) > self._max_name_len:
             raise MongoUtilsPubSubError("name can't be greater than {:2d} chars".format(self._max_name_len))
@@ -291,7 +291,9 @@ class PubSub(Sub):
         self._ackn_delay = 0
 
     def reset(self):
-        """drops collection and resets sequence generator"""
+        """drops collection and resets sequence generator
+           a tailing cursor with auto_retry has been proved to survive a reset but don't count on that
+        """
         self.db.drop_collection(self._col_name)
         self.aux_tools.sequence_reset(self._col_name)
         self._collection = self._create_collection()
@@ -336,7 +338,8 @@ class PubSub(Sub):
             sleep(self._ackn_delay)
         fltr = {'_id': msg['_id'], 'status.state': MsgState.SENT}
         up = {'$set': {'status.state': MsgState.RECEIVED, 'dt.received': datetime.utcnow(),
-                       'status.receivedBy': self._name}}
+                       'status.receivedBy': self._name.ljust(self._max_name_len, ' ')[:self._max_name_len]}}  # keep same size 
+        doc = self._collection.find_one(fltr)
         return self._acknowledge(fltr, up)
 
     def _yield_doc(self, msg):
@@ -405,7 +408,7 @@ class PubSub(Sub):
 
         :Parameters:
             - topic: any arbitrary value specifying a topic or None
-            - topic: any arbitrary value specifying a verb or None
+            - verb: any arbitrary value specifying a verb or None
             - target: a value specifying target listener or None
               see  :class:`~pubsub.SubTarget` class
             - projection: a pymongo projection specifying which fields to return or None

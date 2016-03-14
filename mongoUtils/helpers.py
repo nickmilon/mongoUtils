@@ -137,7 +137,7 @@ def coll_update_id(coll_obj, doc, new_id):
 
 
 def coll_copy(collObjFrom, collObjTarget, filter_dict={},
-              create_indexes=False, dropTarget=False, write_options={}, verbose=10):
+              create_indexes=False, dropTarget=False, write_options={'w': "majority"}, verbose=10):
     """copies a collection using unordered bulk inserts
     similar to `copyTo <http://docs.mongodb.org/manual/reference/method/db.collection.copyTo/>`_ that is now deprecated
 
@@ -160,7 +160,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
     if verbose > 0:
         print("totalRecords", totalRecords)
     perc_done_last = -1
-    bulk = muBulkOps(collObjTarget, ordered=False, ae_n=1000, dwc={'w': "majority"})
+    bulk = muBulkOps(collObjTarget, ordered=False, ae_n=1000, dwc=write_options)
     cnt = 0
     for doc in docs:
         cnt += 1
