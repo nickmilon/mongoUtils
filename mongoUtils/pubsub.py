@@ -2,6 +2,7 @@
 """
 
 from datetime import datetime
+import os
 from pymongo.errors import AutoReconnect, NotMasterError
 from pymongo.cursor import CursorType
 from pymongo import collection, ReturnDocument
@@ -74,7 +75,7 @@ class Sub(object):
               - it's values must be monotonic increasing
               - it must be an indexed field (especially for large collections)
               - if None the instance will try to get one by examining the documents in collection
-        - name:    (str) a name for this instance if not given defaults to db.name|collection.name
+        - name:    (str) a name for this instance if not given defaults to machine-name|processID
 
     :Raises:
         - MongoUtilsPubSubError if a track_field is not provided and can't be obtained automatically
@@ -89,7 +90,7 @@ class Sub(object):
             if track_field.find('.') > -1:
                 raise MongoUtilsPubSubError('track_field is not first level')
         self._track_field = track_field
-        self._name = "{:7s}|{:8s}".format(self._collection.db.name, self._collection.name) if name is None else name
+        self._name = "{}|{}".format(os.uname()[1], os.getpid()) if name is None else name
         if track_field is None:
             raise MongoUtilsPubSubError('no track_field')
         self._dt_utc_start = datetime.utcnow()
@@ -258,7 +259,7 @@ class PubSub(Sub):
     :Parameters:
         - collection_or_name: (obj or str) a pymongo collection or a string
         - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
-        - name:    (str) a name for this instance if not given defaults to db.name|collection.name
+        - name:    (str) a name for this instance if not given defaults to machine-name|processID
         - capped:  (bool optional) set to True to get a capped collection
         - reset:   (bool) drops & recreates collection and resets id counters if True
         - size:    (int) capped collection size in bytes
