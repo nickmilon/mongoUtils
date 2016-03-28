@@ -3,7 +3,7 @@
 
 from datetime import datetime
 import os
-from pymongo.errors import AutoReconnect, NotMasterError
+from pymongo.errors import AutoReconnect, NotMasterError, ServerSelectionTimeoutError
 from pymongo.cursor import CursorType
 from pymongo import collection, ReturnDocument
 from bson.objectid import ObjectId
@@ -12,6 +12,7 @@ from time import sleep
 from mongoUtils.helpers import AuxTools, db_capped_set_or_get, MongoUtilsError
 from mongoUtils.aggregation import Aggregation
 from Hellas.Delphi import auto_retry
+from Hellas.Pella import obj_id_expanded
 from Hellas.Sparta import DotDot, EnumLabels
 from pip._vendor.html5lib.treewalkers import pprint
 
@@ -75,7 +76,7 @@ class Sub(object):
               - it's values must be monotonic increasing
               - it must be an indexed field (especially for large collections)
               - if None the instance will try to get one by examining the documents in collection
-        - name:    (str) a name for this instance if not given defaults to machine-name|processID
+        - name:    (str) a name for this instance if not given defaults to machine-name|ppid|pid|obj(id)[-4:]
 
     :Raises:
         - MongoUtilsPubSubError if a track_field is not provided and can't be obtained automatically
@@ -90,7 +91,7 @@ class Sub(object):
             if track_field.find('.') > -1:
                 raise MongoUtilsPubSubError('track_field is not first level')
         self._track_field = track_field
-        self._name = "{}|{}".format(os.uname()[1], os.getpid()) if name is None else name
+        self._name = obj_id_expanded(self, 4)
         if track_field is None:
             raise MongoUtilsPubSubError('no track_field')
         self._dt_utc_start = datetime.utcnow()
@@ -150,7 +151,7 @@ class Sub(object):
                 cursor.skip(cursor.count())
         return cursor
 
-    @auto_retry((AutoReconnect, NotMasterError) , 6, 0.5, 1)
+    @auto_retry((AutoReconnect, NotMasterError, ServerSelectionTimeoutError), 6, 0.5, 1)
     def tail(self, query, projection=None, start_from_last=True, sleep_secs=0.1, filter_func=lambda x: x):
         """
         subscribe to a capped collection via a tailing cursor. Method is thread safe.
@@ -172,7 +173,6 @@ class Sub(object):
             start_from_last = False
         while retry and self._continue:
             cursor = self._get_cursor(query, projection, start_from_last)
-            # print  ("cursor {} {}".format(cursor.alive, 'X1X1'))
             while cursor.alive and self._continue:
                 try:
                     doc = next(cursor)
@@ -259,7 +259,7 @@ class PubSub(Sub):
     :Parameters:
         - collection_or_name: (obj or str) a pymongo collection or a string
         - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
-        - name:    (str) a name for this instance if not given defaults to machine-name|processID
+        - name:    (str) a name for this instance if not given defaults to machine-name|ppid|pid
         - capped:  (bool optional) set to True to get a capped collection
         - reset:   (bool) drops & recreates collection and resets id counters if True
         - size:    (int) capped collection size in bytes
@@ -383,7 +383,7 @@ class PubSub(Sub):
         """
         return self._insert_msg(payload, topic, verb, target, state=MsgState.SENT, ackn=ackn, sentBy=sentBy)
 
-    def _query(self, topic=None, verb=None, target=True, state=MsgState.SENT):
+    def _query(self, state=MsgState.SENT, topic=None, verb=None, target=True):
         def update_son(key, val):
             if val is not None and val != '':
                 qson.update({key: val})
@@ -397,17 +397,19 @@ class PubSub(Sub):
         elif target == SubTarget.NAME_RX:
             target = {'$regex': '^' + self._name + '.'}
         qson = SON()
+        update_son('status.state', state)
         update_son('address.topic', topic)
         update_son('address.verb', verb)
         update_son('address.target', target)
-        update_son('status.state', state)
         return qson
 
-    def tail(self, topic=None, verb=None, target=SubTarget.NAME,
+    def tail(self, state=MsgState.SENT, topic=None, verb=None, target=SubTarget.NAME,
              projection=None, start_from_last=True, sleep_secs=0.01):
         """subscribe by tail
 
         :Parameters:
+            - state: MsgState
+              see  :class:`~pubsub.MsgState` class
             - topic: any arbitrary value specifying a topic or None
             - verb: any arbitrary value specifying a verb or None
             - target: a value specifying target listener or None
@@ -416,16 +418,19 @@ class PubSub(Sub):
             - start_from_last: see :meth:`Sub.tail` method
             - delay_secs  see :meth:`Sub.tail` method
         """
-        query = self._query(topic, verb, target, None)
+        query = self._query(state=MsgState.SENT, topic=topic, verb=verb, target=target)
         return super(PubSub, self).tail(query, projection=projection, start_from_last=start_from_last,
                                         sleep_secs=sleep_secs, filter_func=self._yield_doc)
 
-    def poll(self, topic=None, verb=None, target=SubTarget.NAME,
+    def poll(self, state=MsgState.SENT, topic=None, verb=None, target=SubTarget.NAME,
              projection=None, start_from_last=True, sleep_secs=1, limit=10):
         """subscribe by poll
 
         :Parameters: see methods :meth:`Sub.poll`  and :meth:`PubSub.tail`
         """
+        query = self._query(state=MsgState.SENT, topic=topic, verb=verb, target=target)
+        return super(PubSub, self).poll(query, projection=projection, start_from_last=start_from_last,
+                                        sleep_secs=sleep_secs, filter_func=self._yield_doc, limit=limit)
 
     def _tail_adhoc(self, *args, **kwargs):
         """bypass protocol and tails as defined by parent - used for testing"""
