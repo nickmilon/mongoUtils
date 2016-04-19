@@ -3,6 +3,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConfigurationError
 from mongoUtils.helpers import (muDatabase, pp_doc, client_schema)
 from Hellas.Sparta import DotDot
+from decimal import DivisionByZero
 
 
 class muClient(MongoClient):
@@ -33,7 +34,6 @@ class muClient(MongoClient):
             else:
                 raise
         self.cl_init_complete()
-
     def cl_colstats(self, details=2, verbose=True):
         rt = DotDot([[d, self[d].collstats(details, False)] for d in self.database_names()])
         pp_doc(rt, sort_keys=False, verbose=verbose)

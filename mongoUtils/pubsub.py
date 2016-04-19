@@ -8,12 +8,13 @@ from pymongo.cursor import CursorType
 from pymongo import collection, ReturnDocument
 from bson.objectid import ObjectId
 from bson import SON, CodecOptions
-from time import sleep
+from time import sleep, time
 from mongoUtils.helpers import AuxTools, db_capped_set_or_get, MongoUtilsError
 from mongoUtils.aggregation import Aggregation
 from Hellas.Delphi import auto_retry
 from Hellas.Pella import obj_id_expanded
-from Hellas.Sparta import DotDot, EnumLabels
+from Hellas.Sparta import DotDot, EnumLabels, seconds_to_DHMS
+from Hellas.Thebes import format_header
 from pip._vendor.html5lib.treewalkers import pprint
 
 
@@ -169,7 +170,7 @@ class Sub(object):
         projection = self._projection_validate(projection)
         retryOnDeadCursor = True
         retry = True
-        if start_from_last is True and self._collection.count() == 0:  # last doen't apply
+        if start_from_last is True and self._collection.count() == 0:  # last doesn't apply
             start_from_last = False
         while retry and self._continue:
             cursor = self._get_cursor(query, projection, start_from_last)
@@ -188,7 +189,7 @@ class Sub(object):
                 retry = False
         self.tail_exit(cursor)
 
-    def poll(self, query={}, projection=None, start_from_last=True, sleep_secs=1, filter_func=lambda x: x, limit=100):
+    def poll(self, query={}, projection=None, start_from_last=True, sleep_secs=0, filter_func=lambda x: x, limit=1000):
         """
         subscribe by poll in case collection is not capped or when response time is not critical,
         instead of a tailing cursor we can use poll. Method is thread safe.
@@ -260,20 +261,23 @@ class PubSub(Sub):
         - collection_or_name: (obj or str) a pymongo collection or a string
         - db:      (obj optional) a pymongo db instance only needed if collection_or_name is a string
         - name:    (str) a name for this instance if not given defaults to machine-name|ppid|pid
+        - incl_parent (bool): includes  parent in _id = (ts, parent)  
         - capped:  (bool optional) set to True to get a capped collection
         - reset:   (bool) drops & recreates collection and resets id counters if True
         - size:    (int) capped collection size in bytes
         - max_docs:(int) capped collection max documents count
-    """
-    _max_name_len = 32
-    _reserve_name = " " * _max_name_len  # reserved bytes in a document to ensure it will not change size
+    """ 
     _dt_frmt_info = "{} {:%Y-%m-%d %H:%M:%S %f}"
 
-    def __init__(self, collection_or_name, db=None, name=None,
+    def __init__(self, collection_or_name, db=None, name=None, incl_parent=False,
                  capped=True, reset=False,
                  size=2 ** 30,  # ~1 GB
                  max_docs=None):
         self._coll_init_specs = {'capped': capped, 'size': size, 'max_docs': max_docs}
+        self._max_name_len = 32
+        self._reserve_name = " " * self._max_name_len  # reserved bytes in a document to ensure it will not change size
+        self._incl_parent = incl_parent
+        self._autothrottle = False
         if isinstance(collection_or_name, collection.Collection):
             self._col_name = collection_or_name.name
             self.db = collection_or_name.database
@@ -286,9 +290,13 @@ class PubSub(Sub):
             self.reset()
         a_collection = self._create_collection()
         super(PubSub, self).__init__(a_collection=a_collection, track_field='ts', name=name)
+        self._name_max = self._name.ljust(self._max_name_len, ' ')[:self._max_name_len]  # to keep it same size
         if len(self._name) > self._max_name_len:
             raise MongoUtilsPubSubError("name can't be greater than {:2d} chars".format(self._max_name_len))
-        a_collection.ensure_index("ts", background=True)
+        a_collection.create_index("ts", background=True, name='nm_ts')
+        a_collection.create_index([('status.state', 1)], background=True, name='nm_status.state')
+        # a_collection.create_index([('_id',1), ('status.state', 1)], name='nm_ci_id_ss', background = True)
+        # create_index([('status.state', 1), ('ts',1) ] , background =True, name='nm_ss_ts')
         self._ackn_delay = 0
 
     def reset(self):
@@ -338,9 +346,10 @@ class PubSub(Sub):
         if self._ackn_delay > 0:
             sleep(self._ackn_delay)
         fltr = {'_id': msg['_id'], 'status.state': MsgState.SENT}
-        up = {'$set': {'status.state': MsgState.RECEIVED, 'dt.received': datetime.utcnow(),
-                       'status.receivedBy': self._name.ljust(self._max_name_len, ' ')[:self._max_name_len]}}  # keep same size 
-        doc = self._collection.find_one(fltr)
+#         up = {'$set': {'status.state': MsgState.RECEIVED, 'dt.received': datetime.utcnow(),
+#                        'status.receivedBy': self._name_max}}  # keep same size
+        up = {'$set': {'status.state': MsgState.RECEIVED, 'dt.received': int(time()), 'status.receivedBy': self._name_max}}  # keep same size
+
         return self._acknowledge(fltr, up)
 
     def _yield_doc(self, msg):
@@ -349,7 +358,7 @@ class PubSub(Sub):
 
     def acknowledge_done(self, msg, state=MsgState.SUCCES):
         fltr = {'_id': msg['_id'], 'status.state': MsgState.RECEIVED, 'status.receivedBy': self._name}
-        up = {'$set': {'status.state': state, 'dt.completed': datetime.utcnow()}}
+        up = {'$set': {'status.state': state, 'dt.completed': int(time())}}
         rt = self._acknowledge(fltr, up)
         if rt is None:
             raise MongoUtilsPubSubError('message not found')
@@ -362,9 +371,9 @@ class PubSub(Sub):
         if sentBy is None:
             sentBy = self.name
         ts = self._id_next()
-        _id = SON([('id', ts), ('parent', parent)])
+        _id = SON([('id', ts), ('parent', parent)]) if self._incl_parent else SON([('id', ts)])
         address = SON([('topic', topic), ('verb', verb), ('target', target)])
-        dt = SON([('sent', datetime.utcnow()), ('received', datetime(1900, 1, 1)), ('completed', datetime(1900, 1, 1))])
+        dt = SON([('sent', int(time())), ('received', 0), ('completed', 0)])
         status = SON([('state', state), ('sentBy', sentBy),
                       ('receivedBy', self._reserve_name)])  # reserve space so document will not grow on update
         msg = SON([('_id', _id), ('ts', ts),  ('ackn', ackn), ('address', address),
@@ -381,7 +390,28 @@ class PubSub(Sub):
             - ackn: Request acknowledge see: :class: Acknowledge class
             - sendBy: str or None identifies sender (if None defaults to instance name)
         """
+        if self._autothrottle is not None:
+            self._autothrotle()
         return self._insert_msg(payload, topic, verb, target, state=MsgState.SENT, ackn=ackn, sentBy=sentBy)
+
+    def pub_autothrottle_set(self, check_every=10000):
+        self._autothrottle = DotDot({'cnt': 0, 'check_every': check_every})
+
+    def _autothrotle(self):
+        def check(sleep_secs): 
+            self._autothrottle.total = self._collection.count()
+            self._autothrottle.check_every = max(self._autothrottle.check_every, self._autothrottle.total/20)
+            while sleep_secs > 0:
+                # print "sub check", sleep_secs, self._autothrottle
+                self._autothrottle.unprocessed_start = self._collection.find({'status.state': 1}).count()
+                if self._autothrottle.unprocessed_start / (self._autothrottle.total + 1.0) > 0.1:
+                    sleep(sleep_secs)
+                    sleep_secs = min(120, sleep_secs + 20)
+                else:
+                    sleep_secs = 0 
+        if self._autothrottle.cnt % self._autothrottle.check_every == 0:
+            check(30)
+        self._autothrottle.cnt += 1
 
     def _query(self, state=MsgState.SENT, topic=None, verb=None, target=True):
         def update_son(key, val):
@@ -423,7 +453,7 @@ class PubSub(Sub):
                                         sleep_secs=sleep_secs, filter_func=self._yield_doc)
 
     def poll(self, state=MsgState.SENT, topic=None, verb=None, target=SubTarget.NAME,
-             projection=None, start_from_last=True, sleep_secs=1, limit=10):
+             projection=None, start_from_last=True, sleep_secs=0.5, limit=100):
         """subscribe by poll
 
         :Parameters: see methods :meth:`Sub.poll`  and :meth:`PubSub.tail`
@@ -461,6 +491,17 @@ class PubSub(Sub):
 
 
 class PubSubStats(object):
+    """
+    :usage: 
+        >>> mqs = PubSubStats(a_collection)
+        >>> ag=mqs.job_status()
+        >>> for i in ag():print(i)
+        >>> SON([(u'_id', SON([(u'address_topic', u'ap-data'), (u'status_state', 1)])), (u'count', 21842)])
+        >>> SON([(u'_id', SON([(u'address_topic', u'ap-data'), (u'status_state', 2)])), (u'count', 22391)])
+        >>> ag2=mqs.responce_stats()
+        >>> for i in ag2():print(i)
+        >>> SON([(u'_id', None), (u'max_rMillis', 314490L), (u'count', 51068), (u'min_rMillis', 2L), (u'avg_rMillis', 131699.63135427274)])
+    """
     def __init__(self, collection):
         self.collection = collection
         self.cache = {}
@@ -506,3 +547,56 @@ class PubSubStats(object):
                 res.seconds = (msgs[0]['dt']['received'] - msg_first['dt']['received']).total_seconds()
                 res.msgsPerSec = 0 if res.seconds == 0 else res.msgs / res.seconds
         return res
+
+    def status(self):
+        status = DotDot({})
+        status.msgs_processed = self.collection.find({'status.state': 2}).count()  # this first to be pesimistic 
+        status.msgs_total = self.collection.count()
+        status.msgs_unprocessed = status.msgs_total - status.msgs_processed
+        status.msgs_unprocessed_perc = (status.msgs_unprocessed/(status.msgs_total+1.0)) * 100  # percent unprocessed in buffer
+        return status
+
+    def monitor(self, every_seconds, report_per_sec=False):
+
+        def dict_diff():
+            stats_res = DotDot()
+            for k in stats_last.keys():
+                val = stats[k] - stats_last[k]
+                if report_per_sec:
+                    val = int(  float(val) / every_seconds)
+                stats_res[k] = val
+            return stats_res
+
+        frmt_stats = "|{total:12,d}|{unprocessed:12,d}|{processed:12,d}|"
+        frm_dt = "|{cnt:6,d}|{DHMS:12s}|"
+        #format_stream_stats = "|{name:8s}|{DHMS:12s}|{chunks:15,d}|{data:14,d}|{avg_per_sec:12,.2f}|"
+        frmt_stats_header = format_header(frm_dt + (frmt_stats*2))
+        print (frmt_stats_header)
+        coll = self.collection
+        stats = DotDot()
+        stats_last = None
+        counters = DotDot({'cnt': 0})
+        dt_start = datetime.utcnow()
+        while True:
+            dt_now = datetime.utcnow()
+            cur_ts = int(dt_now.strftime("%s"))
+            dt_future = datetime.fromtimestamp(cur_ts + (every_seconds))
+            tot_sec = (dt_now - dt_start).total_seconds()
+            counters.cnt += 1
+            stats.unprocessed = coll.find({'status.state': 1}).count()
+            stats.total = coll.count()
+            stats.processed = stats.total - stats.unprocessed
+            counters.DHMS = seconds_to_DHMS(tot_sec)
+            if not stats_last:
+                stats_last = stats.copy()
+            res = dict_diff()
+            res_str = frm_dt.format(**counters) + frmt_stats.format(**stats)[1:] + frmt_stats.format(**res)[1:] 
+            print(res_str)
+            stats_last = stats.copy()
+            sltime = (dt_future - datetime.utcnow()).total_seconds()
+            sleep(sltime)
+        return stats
+
+    def reset_processed(self, q={}):
+        return self.collection.update_many(q, {'$set': {'status.state': 1}})
+        
