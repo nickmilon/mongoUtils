@@ -117,7 +117,7 @@ class Sub(object):
             - start_from_last [True|False|value] (defaults to True
                 - on next inserted document if True
                 - from 1st document if False  i.e kind of replay
-                - on next document after self._track_field=number if number
+                - on next document after self._track_field=value if value
         """
         doc = None
         if start_from_last is True:
@@ -153,7 +153,7 @@ class Sub(object):
         return cursor
 
     @auto_retry((AutoReconnect, NotMasterError, ServerSelectionTimeoutError), 6, 0.5, 1)
-    def tail(self, query, projection=None, start_from_last=True, sleep_secs=0.1, filter_func=lambda x: x):
+    def tail(self, query, projection=None, start_from_last=True, sleep_secs=0.1, filter_func=lambda x: x, limit=1000):
         """
         subscribe to a capped collection via a tailing cursor. Method is thread safe.
         :Parameters:
@@ -166,6 +166,7 @@ class Sub(object):
                 - a small number (0 - 0.001) makes it more responsive a bigger one (0.01 - 1) more efficient
             - filter_func: a function to filter/modify returned docs (defaults to lambda x: x)
                 - if filter function returns None doc is skipped
+            - limit: not used its there to keep argument compatibility with poll 
         """
         projection = self._projection_validate(projection)
         retryOnDeadCursor = True
@@ -213,8 +214,7 @@ class Sub(object):
                 if filtered_doc is not None:
                     yield filtered_doc
             if doc_last is not None:
-                query[self._track_field] = {'$gt': doc_last[self._track_field]}
-
+                query[self._track_field] = {'$gt': doc_last[self._track_field]} 
         query.update(self._init_query(start_from_last))
         # self._continue = True
         while self._continue:
@@ -390,14 +390,15 @@ class PubSub(Sub):
             - ackn: Request acknowledge see: :class: Acknowledge class
             - sendBy: str or None identifies sender (if None defaults to instance name)
         """
-        if self._autothrottle is not None:
-            self._autothrotle()
+        if self._autothrottle is not False:
+            self._autothrottle_check()
         return self._insert_msg(payload, topic, verb, target, state=MsgState.SENT, ackn=ackn, sentBy=sentBy)
 
     def pub_autothrottle_set(self, check_every=10000):
+        """must be called explicitly after instantiation if we want to enable auto-throttle"""
         self._autothrottle = DotDot({'cnt': 0, 'check_every': check_every})
 
-    def _autothrotle(self):
+    def _autothrottle_check(self):
         def check(sleep_secs): 
             self._autothrottle.total = self._collection.count()
             self._autothrottle.check_every = max(self._autothrottle.check_every, self._autothrottle.total/20)
@@ -580,7 +581,7 @@ class PubSubStats(object):
         while True:
             dt_now = datetime.utcnow()
             cur_ts = int(dt_now.strftime("%s"))
-            dt_future = datetime.fromtimestamp(cur_ts + (every_seconds))
+            dt_future = datetime.utcfromtimestamp(cur_ts + (every_seconds))
             tot_sec = (dt_now - dt_start).total_seconds()
             counters.cnt += 1
             stats.unprocessed = coll.find({'status.state': 1}).count()

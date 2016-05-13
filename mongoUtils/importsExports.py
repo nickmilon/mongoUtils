@@ -186,7 +186,8 @@ class ImportXls(Import):
         vl = cl.value
         if tp == xlrd.XL_CELL_NUMBER:   # number
             if self._ws_options.get('integers_only') is True:
-                vl = int(vl + 0.49999)  # kind of round
+                if vl % 1 == 0:
+                    vl = int(vl + 0.49999)  # kind of round
             if vl < 0 and self._ws_options.get('negatives_to_0'):
                 vl = 0
         elif tp == xlrd.XL_CELL_DATE and self._ws_options.get('dt_python') is True:

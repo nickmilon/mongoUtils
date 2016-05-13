@@ -1,9 +1,10 @@
 """some helper functions and classes"""
 
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from Hellas.Sparta import DotDot
 from bson import json_util, SON
+from bson.objectid import ObjectId
 from mongoUtils import _PATH_TO_JS
 from pymongo.read_preferences import ReadPreference
 from pymongo.collection import Collection
@@ -136,13 +137,13 @@ def coll_update_id(coll_obj, doc, new_id):
             return False, False, False
 
 
-def coll_copy(collObjFrom, collObjTarget, filter_dict={},
+def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
               create_indexes=False, dropTarget=False, write_options={'w': "majority"}, verbose=10):
     """copies a collection using unordered bulk inserts
     similar to `copyTo <http://docs.mongodb.org/manual/reference/method/db.collection.copyTo/>`_ that is now deprecated
 
     :Parameters:
-        - collObjFrom:
+        - collObjFrom: original collection
         - collObjTarget: destination collection
         - filter_dict: a pymongo query dictionary to specify which documents to copy (defaults to {})
         - create_indexes: creates same indexes on destination collection if True
@@ -156,7 +157,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict={},
     if dropTarget:
         collObjTarget.drop()
     docs = collObjFrom.find(filter_dict)
-    totalRecords = collObjFrom.count() if filter_dict == {} else docs.count()
+    totalRecords = collObjFrom.count() if filter_dict is None else docs.count()
     if verbose > 0:
         print("totalRecords", totalRecords)
     perc_done_last = -1
@@ -571,3 +572,29 @@ def collection_insert_dict(a_collection, a_dict, use_key_as_id=True):
         bulkops.insert(dict(v, **{'_id': k}) if a_dict else v)
     bulkops.execute_if_pending()
     return a_collection
+
+
+def oid_date_range_filter(dt_from=None, dt_upto=None, field_name='_id'):
+    """
+    constructs a range query usefull to query an ObjectId field by date
+    :Parameters:
+        - dt_from (datetime or tuple): starting date_time if tuple a datetime is constucted from tuple
+        - dt_upto (datetime or tuple): end date_time if tuple a datetime is constucted from tuple
+        - field_name: (str): optional default to '_id' field to query or None if None returns range only else returns full query
+    :Returns:
+        - range query (due to objectId structure $gt includes dt_from) while $lt dt_upto (not included) 
+    """
+    def dt(dt_or_tuple):
+        if isinstance(dt_or_tuple, datetime):
+            return dt_or_tuple
+        elif isinstance(dt_or_tuple, tuple):
+            return datetime(*dt_or_tuple)
+        else:
+            raise TypeError('dt must be a date or tuple')
+    q = SON()
+    if dt_from is not None:
+        q.update(SON([('$gt', ObjectId.from_datetime(dt(dt_from)))]))
+    if dt_upto is not None:
+        q.update(SON([('$lt', ObjectId.from_datetime(dt(dt_upto)))]))
+    return q if field_name is None else SON([(field_name, q)])
+
