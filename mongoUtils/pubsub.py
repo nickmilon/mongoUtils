@@ -125,7 +125,7 @@ class Sub(object):
         elif start_from_last is False:
             doc = self._collection.find_one(sort=[("$natural", 1)])
         else:  # then must be a value
-            doc = self._collection.find_one({self._track_field: start_from_last})
+            doc = self._collection.find_one({self._track_field: {'$gte': start_from_last}})
         track_field_val = doc[self._track_field] if doc is not None else None
         if track_field_val:
             return {self._track_field: {'$gt' if start_from_last is True else '$gte': track_field_val}}
@@ -161,12 +161,12 @@ class Sub(object):
             - start_from_last [True|False|value] (defaults to True
                 - True: on next inserted document
                 - False: from 1st document  i.e kind of replay
-                - value: on next document after self._track_field=value if any other value
+                - value: on next document after self._track_field>=value if any other value
             - sleep_secs: (int or float) seconds to wait on cursor StopIteration
                 - a small number (0 - 0.001) makes it more responsive a bigger one (0.01 - 1) more efficient
             - filter_func: a function to filter/modify returned docs (defaults to lambda x: x)
                 - if filter function returns None doc is skipped
-            - limit: not used its there to keep argument compatibility with poll 
+            - limit: not used its there to keep argument compatibility with poll
         """
         projection = self._projection_validate(projection)
         retryOnDeadCursor = True
