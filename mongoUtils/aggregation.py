@@ -3,6 +3,7 @@
 from mongoUtils.helpers import pp_doc
 from pymongo.command_cursor import CommandCursor
 from bson.son import SON
+from datetime import datetime
 
 
 class Aggregation(object):
@@ -179,4 +180,10 @@ class AggrCountsWithPerc(AggrCounts):
                 perc= round(perc, round_perc)
             i['perc'] = perc
         return res
-        
+
+
+def projection_tstodt(ts_field_name):
+    """ returns a projection field that can be used as native mongoDB date from a ts field
+    :param ts_field_name (str): aggregation name of a field on collection that contains an epoch based integer timestamp value ie '$foo.bar'
+    """
+    return {'$add': [datetime.utcfromtimestamp(0),  {"$multiply": [1000, ts_field_name]}]}

@@ -593,8 +593,8 @@ def oid_date_range_filter(dt_from=None, dt_upto=None, field_name='_id'):
             raise TypeError('dt must be a date or tuple')
     q = SON()
     if dt_from is not None:
-        q.update(SON([('$gt', ObjectId.from_datetime(dt(dt_from)))]))
+        q.update(SON([('$gte', ObjectId.from_datetime(dt(dt_from)))]))
     if dt_upto is not None:
-        q.update(SON([('$lt', ObjectId.from_datetime(dt(dt_upto)))]))
+        q.update(SON([('$lte', ObjectId.from_datetime(dt(dt_upto)))]))
     return q if field_name is None else SON([(field_name, q)])
 
