@@ -182,6 +182,25 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
     return collObjTarget
 
 
+def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
+            create_indexes=False, dropTarget_collections=False, write_options={'w': "majority"}, verbose=10):
+    """copies a db by calling coll_copy for all its collections
+    useful becouse shell command doesn't work properly for protected dbs
+
+    :Parameters:
+        - dbObjFrom: original db
+        - dbObjTarget: destination db
+        - col_name_prefix: a string to prefix target collection names so will not overwrite those defaults to ''
+        - create_indexes: creates same indexes on destination collections if True
+        - dropTarget_collections: drop target collections before copy if True (other wise appends to it)
+        - write_options: operation options (use {'w': 0} for none critical copies
+        - verbose: if > 0 prints progress statistics at verbose percent intervals
+    """
+    for col_name in dbObjFrom.collection_names():
+        coll_copy(dbObjFrom[col_name], dbObjTarget[col_name_prefix + col_name], filter_dict=None,
+                  create_indexes=create_indexes, dropTarget=dropTarget_collections, write_options=write_options, verbose=verbose)
+
+
 def db_capped_create(db, coll_name, sizeBytes=1024 * 1000 * 100, maxDocs=None, autoIndexId=True, **kwargs):
     """create a capped collection
 

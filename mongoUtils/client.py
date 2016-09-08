@@ -29,11 +29,12 @@ class muClient(MongoClient):
         try:
             self.db = self.get_default_database()
         except ConfigurationError as e:
-            if e.message == 'No default database defined':
+            if e.args[0] == 'No default database defined':
                 self.db = None
             else:
                 raise
         self.cl_init_complete()
+
     def cl_colstats(self, details=2, verbose=True):
         rt = DotDot([[d, self[d].collstats(details, False)] for d in self.database_names()])
         pp_doc(rt, sort_keys=False, verbose=verbose)

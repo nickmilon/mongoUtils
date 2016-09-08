@@ -1,4 +1,10 @@
-"""aggregation operations"""
+"""aggregation operations
+:notes:: 
+    aggregation currently doesn't support shift bit operators those can be substituted by:
+        x >> y = x / (2 ** y)
+        x << y = x * (2 ** y) 
+
+"""
 
 from mongoUtils.helpers import pp_doc
 from pymongo.command_cursor import CommandCursor

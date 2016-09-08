@@ -28,9 +28,10 @@ class MC(object):
 
 
 class REST(object):
-    statuses = DotDot({201: 'Created',
+    statuses = DotDot({200: 'OK',
+                       201: 'Created',
                        400: 'Bad Request',
-                       404: 'Not Found', 
+                       404: 'Not Found',
                        409: 'Conflict',
                        412: 'Precondition Failed'
                        })
@@ -70,17 +71,17 @@ class REST(object):
         return {'header': {'ts_start': time()}}
 
     @classmethod
-    def ops_results_default_end(cls, results, status_msg=(200, 'ok'), ops_count=1):
+    def ops_results_default_end(cls, results, status_msg=(200, 'OK'), ops_count=1):
         header = results['header']
-        header.setdefault("format", 'json')
         duration = time() - header['ts_start']
         header['duration_ms'] = int(duration * 1000)
         header['ops_count'] = ops_count
         header['ops_per_sec'] = int(ops_count / duration)
         header['status'] = status_msg[0]
-        header['message'] = status_msg[1]
-        header['dt_start'] = datetime.utcfromtimestamp(header['ts_start']).isoformat()
+        header['message'] = status_msg[1] if len(status_msg) == 2 else cls.statuses.get(status_msg[0], '')
+        header['dt_start'] = datetime.utcfromtimestamp(header['ts_start']).isoformat("T") + "Z"
         return results
+
 
 class muModel(object):
     """ redefine following default values in descendants if needed"""
@@ -120,7 +121,6 @@ class muModel(object):
     def _parent_find_one(self, rel_name, value, **kwargs):
         relation = self._relations.get(rel_name)
         if relation:
-            print "filter X", filter, self
             return relation[0]._col.find_one({relation[2], value}, **kwargs)
         raise KeyError(rel_name)
 
@@ -189,7 +189,6 @@ class muModel(object):
         if isinstance(q_filter, basestring):
             q_filter = SON([(self._rest_field[0], q_filter)])
         self._filter_clear_empty(q_filter)
-        print "filterX ", q_filter
         rt = self._col.find(q_filter, **kwargs) 
         return rt
 
