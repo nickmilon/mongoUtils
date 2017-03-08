@@ -82,7 +82,7 @@ class Examples(object):
             value = randint(-1, 1)
             {"_id": id, "site": "site A", "weekday": 1, "value": 1}
             doc = DotDot({'site': site, 'weekday': weekday, 'value': value})
-            print doc
+            print (doc)
             return doc
 
         db.drop_collection('ex_002')

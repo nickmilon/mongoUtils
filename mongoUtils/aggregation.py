@@ -37,7 +37,7 @@ class Aggregation(object):
         >>> next(aggr_obj())                                                                   # execute and get results
         {u'avg_followers': 2943.8210227272725, u'_id': None})                                  # results
      """                                             # executes aggregation
-    _operators = 'project match redact limit skip sort unwind group out geoNear indexStats lookup'.split(' ')
+    _operators = 'project match redact limit skip sort unwind group out geoNear indexStats sample lookup graphLookup'.split(' ')
     _frmt_str = "{}\nstage#= {:2d}, operation={}"
 
     def __init__(self, collection, pipeline=None, **kwargs):
@@ -167,7 +167,11 @@ class AggrCounts(Aggregation):
         super(AggrCounts, self).__init__(collection, **kwargs)
         if match is not None:
             self.match(match)
-        self.group({'_id': '$'+field, 'count': {'$sum': 1}})
+        if isinstance(field, list):
+            field = {i: '$' + i for i in field}
+        else:
+            field = '$'+field
+        self.group({'_id': field, 'count': {'$sum': 1}})
         if sort is not None:
             self.sort(sort)
 
@@ -183,9 +187,71 @@ class AggrCountsWithPerc(AggrCounts):
         for i in res:
             perc = (i['count'] / total * 100)
             if round_perc:
-                perc= round(perc, round_perc)
+                perc = round(perc, round_perc)
             i['perc'] = perc
         return res
+
+
+class AggrSample(Aggregation):
+    def __init__(self, collection, size,  match=None, **kwargs):
+        super(AggrSample, self).__init__(collection, **kwargs)
+        self.sample({'size': size})
+
+
+class AggrLookUp(Aggregation):
+    """
+    constructs a lookUp aggregation pipeline based on :class:`~Aggregation` class
+
+    :param obj collection: a pymongo collection object
+    :param str from_collection: target collection name to lookUp from (in same db)
+    :param str localField: source collection field name to join
+    :param str foreingField: target collection field name to join
+    :param str AS: field name wher to put Joined document
+    :param boolean orphans: return orphan's only if True, not orphans if False, All if None
+    :param dict match: a query match expression, defaults to None
+    :param dict kwargs: optional arguments to pass to parent :class:`~Aggregation`
+    """
+
+    def __init__(self, collection, from_collection, localField, foreingField, AS='lookUp', orphans=None, match=None,  **kwargs):
+        super(AggrLookUp, self).__init__(collection, **kwargs)
+        if match is not None:
+            self.match(match)
+        self.lookup({'from': from_collection,
+                     'localField': localField,
+                     'foreignField': foreingField,
+                     'as': AS
+                     })
+        if orphans is True:
+            self.match({AS: []})
+        elif orphans is False:
+            self.match({AS: {'$ne': []}})
+
+
+class GraphLookUp(Aggregation):
+    def __init__(self, collection, from_collection, startWith, connectFromField, connectToField, AS,
+                 maxDepth=None, depthField=None, restrictSearchWithMatch=None,
+                 match=None, orphans=False, **kwargs): 
+        super(GraphLookUp, self).__init__(collection, **kwargs)
+        args = {'from': from_collection,
+                'startWith': startWith,
+                'connectFromField': connectFromField,
+                'connectToField': connectToField,
+                'as': AS
+                }
+        if maxDepth is not None:
+            args.update({'maxDepth': maxDepth})
+        if depthField is not None:
+            args.update({'depthField': depthField})
+        if restrictSearchWithMatch is not None:
+            args.update({'restrictSearchWithMatch': restrictSearchWithMatch})
+
+        self.graphLookup(args)
+
+        if orphans is True:
+            self.match({AS: []})
+        elif orphans is False:
+            self.match({AS: {'$ne': []}})
+        
 
 
 def projection_tstodt(ts_field_name):

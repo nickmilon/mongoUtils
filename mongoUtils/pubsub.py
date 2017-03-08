@@ -97,6 +97,7 @@ class Sub(object):
             raise MongoUtilsPubSubError('no track_field')
         self._dt_utc_start = datetime.utcnow()
         self._continue = True
+        self._counters = {"cnt1": 0, 'cnt2': 0}  # only used for debugging  (not thread safe)
 
     def _suggest_track_field(self):
         doc_first = self._collection.find_one()
@@ -207,20 +208,22 @@ class Sub(object):
         def next_batch():
             docs = self._collection.find(query, sort=[(self._track_field, 1)],
                                          projection=projection, limit=limit)
-            doc_last = None
             for doc in docs:
-                doc_last = doc
                 filtered_doc = filter_func(doc)
+                self._counters['cnt1'] +=1
+                # print ('yielding', self._counters['cnt1'], docs.count(), str(doc['_id']))
                 if filtered_doc is not None:
                     yield filtered_doc
-            if doc_last is not None:
-                query[self._track_field] = {'$gt': doc_last[self._track_field]} 
+            raise StopIteration
+
         query.update(self._init_query(start_from_last))
         # self._continue = True
         while self._continue:
             for d in next_batch():
                 yield d
             sleep(sleep_secs)
+            query[self._track_field] = {'$gt': d[self._track_field]}
+        raise StopIteration
 
     def sub(self, *args, **kwargs):
         """wrapper around poll and tail, it uses tail if collection is capped else poll"""

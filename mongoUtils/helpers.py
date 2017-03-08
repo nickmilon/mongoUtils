@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, date
-from Hellas.Sparta import DotDot
+from Hellas.Sparta import DotDot, seconds_to_DHMS
 from bson import json_util, SON
 from bson.objectid import ObjectId
 from mongoUtils import _PATH_TO_JS
@@ -153,7 +153,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
     """
     frmt_stats = "copying {:6.2f}% done  documents={:20,d} of {:20,d}"
     if verbose > 0:
-        print("copy_collection:{} to {}".format(collObjFrom.name, collObjTarget.name))
+        print("copy_collection:{}.{} to ==> {}.{}".format(collObjFrom.database.name, collObjFrom.name, collObjTarget.database.name, collObjTarget.name))
     if dropTarget:
         collObjTarget.drop()
     docs = collObjFrom.find(filter_dict)
@@ -183,7 +183,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
 
 
 def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
-            create_indexes=False, dropTarget_collections=False, write_options={'w': "majority"}, verbose=10):
+            create_indexes=True, dropTarget_collections=False, write_options={'w': "majority"}, verbose=10):
     """copies a db by calling coll_copy for all its collections
     useful becouse shell command doesn't work properly for protected dbs
 
@@ -191,7 +191,7 @@ def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
         - dbObjFrom: original db
         - dbObjTarget: destination db
         - col_name_prefix: a string to prefix target collection names so will not overwrite those defaults to ''
-        - create_indexes: creates same indexes on destination collections if True
+        - create_indexes: creates same indexes on destination collections if True (default)
         - dropTarget_collections: drop target collections before copy if True (other wise appends to it)
         - write_options: operation options (use {'w': 0} for none critical copies
         - verbose: if > 0 prints progress statistics at verbose percent intervals
@@ -199,6 +199,7 @@ def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
     for col_name in dbObjFrom.collection_names():
         coll_copy(dbObjFrom[col_name], dbObjTarget[col_name_prefix + col_name], filter_dict=None,
                   create_indexes=create_indexes, dropTarget=dropTarget_collections, write_options=write_options, verbose=verbose)
+    return dbObjTarget
 
 
 def db_capped_create(db, coll_name, sizeBytes=1024 * 1000 * 100, maxDocs=None, autoIndexId=True, **kwargs):
@@ -443,9 +444,13 @@ class AuxTools(object):
               but if this id is used for insertions. Insertion order is not 100% guaranteed to correspond to this id.
               If insertion order is critical use the Optimistic Loop technique
 
+    .. todo::
+        - use a range of ids for eficiency as per last source below
+
     .. Seealso:: `counters collection <http://docs.mongodb.org/manual/tutorial/
         create-an-auto-incrementing-field/#auto-increment-counters-collection>`__
         and `Copeland's snippet <https://github.com/rick446/MongoTools/blob/master/mongotools/pubsub/channel.py>`__
+        `generating globally_unique Ids <https://www.mongodb.com/blog/post/generating-globally-unique-identifiers-for-use-with-mongodb?jmp=twt&utm_content=buffere7369&utm_medium=social&utm_source=twitter.com&utm_campaign=buffer>`__
 
     :Parameters:
         - collection: (obj optional) a pymongo collection object
@@ -617,3 +622,44 @@ def oid_date_range_filter(dt_from=None, dt_upto=None, field_name='_id'):
         q.update(SON([('$lte', ObjectId.from_datetime(dt(dt_upto)))]))
     return q if field_name is None else SON([(field_name, q)])
 
+
+def OID_gaps(col=None, ObjectId_field="_id", threshold_secs=60):
+        """ finds gaps in collections Object_id) 
+        """
+
+        frmt = "|docs:{:12,d}|of {:12,d}| %: {:4.4f}|"
+        frmtgap = "|{}|{}|from:{}|to:{}|gap ddd-hh-mm:ss: {}|"
+        res = DotDot({'count': float(col.count()), 'cnt': 0, 'gaps': []})
+        step = int(res.count/100)
+        curs = col.find(sort=[(ObjectId_field, 1)], projection={ObjectId_field: 1})
+        last_doc_gt = curs[0][ObjectId_field].generation_time
+        first_doc_gt = curs[0][ObjectId_field].generation_time
+        res.dt_start = first_doc_gt
+        for doc in curs:
+            res.cnt += 1
+            if res.cnt == 1 or res.cnt % 100000 == step:
+                print(frmt.format(res.cnt, int(res.count), 100 * (res.cnt/res.count)))
+            doc_time = doc[ObjectId_field].generation_time
+            timedelta_secs = abs((doc_time - last_doc_gt).total_seconds())
+            if timedelta_secs > threshold_secs:
+                r = (ObjectId_field, str(doc[ObjectId_field]), last_doc_gt, doc_time, seconds_to_DHMS(timedelta_secs))
+                print (frmtgap.format(*r))
+                res.gaps.append(r)
+            last_doc_gt = doc_time
+        res.seconds_total = timedelta_secs = abs((doc_time - first_doc_gt).total_seconds())
+        res.docsPerSecond = res.count / res.seconds_total
+        res.dt_end = last_doc_gt
+        for g in res.gaps:
+            print (frmtgap.format(*g))
+        return res
+
+
+def db_counts(mongo_client, verbose=True):
+    """ returns document counts for each collection in client's db
+    """
+    res = {}
+    for db in mongo_client.database_names(): 
+        res[db]={}
+        for col in mongo_client[db].collection_names():
+            res[db][col] = mongo_client[db][col].count()
+    return res

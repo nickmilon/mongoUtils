@@ -15,6 +15,9 @@ from bson import CodecOptions, codec_options, SON, objectid
 
 
 ObjectId = objectid.ObjectId
+Client = muClient() 
+
+
 
 class MC(object):
     """ mongo constants"""

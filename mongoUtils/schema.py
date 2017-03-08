@@ -141,7 +141,7 @@ def schema_meta(mr_keys_results, verbose=2):
     info['total fields'] = len(l)
     l = sorted(res[0], key=lambda x: x['_id'])
     if verbose > 0:
-        frmt = "|{field:^70s}|{cnt:16,d}|{percent:7.2f}|{depth:5d}|{notes:^20s}|"
+        frmt = "|{field:70s}|{cnt:16,d}|{percent:7.2f}|{depth:5d}|{notes:^20s}|"
         header = format_header(frmt)
         print(header)
         for i in l:
@@ -170,6 +170,15 @@ def schema_exclude_parents(fields_list, as_string=True):
         return len([i for i in fields_list if i.startswith(item+'.')]) > 0
     rt = [i for i in fields_list if not is_parent(i)]
     return ",".join(rt) if as_string is True else rt
+
+
+def schema_client(mongo_client, exclude_dbs=['test', 'local', 'admin']):
+    for db in mongo_client.database_names():
+        if db not in exclude_dbs:
+            for col in mongo_client.collection_names():
+                print ("fields in db {} collection {}".format(db, col))
+                schema(mongo_client[db][col], meta=True,  scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}}, verbose=2)
+
 
 
 def mongoexport_fields(file_path, collection, query={}, excl_fields_lst=[]):
