@@ -1,5 +1,5 @@
 """utilities for MongoDB"""
-__version__ = '1.1.5'
+__version__ = '1.1.6'
 __author__ = '@nickmilon'
 
 from os import path

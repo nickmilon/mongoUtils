@@ -200,7 +200,6 @@ def coll_transform(coll, query={}, func=lambda x: x, **kwargs):
             coll.save(doc, **kwargs)
         if counter.total % 100 == 0:
             progress.progress(100, counter)
-    print (progress._frmt.format, progress._dict)
     progress.print_end(counter)
     return counter
 
