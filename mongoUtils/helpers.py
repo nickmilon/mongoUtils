@@ -189,16 +189,18 @@ def coll_transform(coll, query={}, func=lambda x: x, **kwargs):
     finds = coll.find(query)
     max_count = coll.count() if query == {} else None
     counter = DotDot({'total': 0, 'transformed': 0})
-    progress = Progress(max_count=max_count, head_line='transforming collection:' + coll.name,
-                        extra_frmt='{total:12,d}|{transformed:12,d}|', extra_dict=counter, every_seconds=30, every_mod=1)
+    head_line = "transforming db:'{}' collection:'{}'".format(coll.database.name, coll.name)
+    progress = Progress(max_count=max_count, head_line=head_line,
+                        extra_frmt='{total:12,d}|{transformed:12,d}|', extra_dict=counter, every_seconds=30, every_mod=None)
     for doc in finds:
-        counter.total += 0
-        if counter.total % 100 == 0:
-            progress.progress(100, counter)
+        counter.total += 1
         new_doc = func(doc)
         if new_doc:
             counter.transformed += 1
             coll.save(doc, **kwargs)
+        if counter.total % 100 == 0:
+            progress.progress(100, counter)
+    print (progress._frmt.format, progress._dict)
     progress.print_end(counter)
     return counter
 
