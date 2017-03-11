@@ -183,8 +183,8 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
     return collObjTarget
 
 
-def coll_transform(coll, query={}, func=lambda x: x, **kwargs):
-    """ transforms collection's documents by applying function func
+def coll_transform(coll, query={}, func=lambda x: x[0], **kwargs):
+    """ transforms collection's documents by applying function func to (doc, collection) func should either return a document or None
     """
     finds = coll.find(query)
     max_count = coll.count() if query == {} else None
@@ -194,7 +194,7 @@ def coll_transform(coll, query={}, func=lambda x: x, **kwargs):
                         extra_frmt='{total:12,d}|{transformed:12,d}|', extra_dict=counter, every_seconds=30, every_mod=None)
     for doc in finds:
         counter.total += 1
-        new_doc = func(doc)
+        new_doc = func(doc, coll)
         if new_doc:
             counter.transformed += 1
             coll.save(doc, **kwargs)
