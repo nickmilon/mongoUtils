@@ -19,6 +19,10 @@ def schema(collection,
     fields of the form xxx.floatApprox xxx.bottom', xxx.top are internal mongoDB field for storing long integers
     outputs to local db so results don't get replicated
 
+    .. todo::
+        - convert it to aggregation with sample
+        - include one document fore each field
+
     :Parameters:
         - collection: a mongoDB collection
         - query: a pymongo query dictionary to filter documents that will be searched

@@ -204,6 +204,21 @@ def coll_transform(coll, query={}, func=lambda x: x, **kwargs):
     return counter
 
 
+def db_transform(db, query={}, func=lambda x: x, **kwargs):
+    res = DotDot()
+    for col_name in db.collection_names():
+        res[col_name] = coll_transform(db[col_name], query={}, func=lambda x: x, **kwargs)
+    return res
+
+
+def client_transform(mongo_client, query={}, func=lambda x: x, exclude_dbs=['test', 'local', 'admin'], **kwargs):
+    res = DotDot()
+    for db_name in mongo_client.database_names():
+        if db_name not in exclude_dbs:
+            res[db_name] = db_transform(mongo_client[db_name], query={}, func=lambda x: x, **kwargs)
+    return res
+
+
 def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
             create_indexes=True, dropTarget_collections=False, write_options={'w': "majority"}, verbose=10):
     """copies a db by calling coll_copy for all its collections
