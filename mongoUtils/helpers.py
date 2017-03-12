@@ -183,7 +183,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
     return collObjTarget
 
 
-def coll_transform(coll, query={}, func=lambda x: x[0], **kwargs):
+def coll_transform(coll, query={}, func=lambda x, y: x, **kwargs):
     """ transforms collection's documents by applying function func to (doc, collection) func should either return a document or None
     """
     finds = coll.find(query)
@@ -204,18 +204,18 @@ def coll_transform(coll, query={}, func=lambda x: x[0], **kwargs):
     return counter
 
 
-def db_transform(db, query={}, func=lambda x: x, **kwargs):
+def db_transform(db, query={}, func=lambda x, y: x, **kwargs):
     res = DotDot()
     for col_name in db.collection_names():
-        res[col_name] = coll_transform(db[col_name], query={}, func=lambda x: x, **kwargs)
+        res[col_name] = coll_transform(db[col_name], query={}, func=func, **kwargs)
     return res
 
 
-def client_transform(mongo_client, query={}, func=lambda x: x, exclude_dbs=['test', 'local', 'admin'], **kwargs):
+def client_transform(mongo_client, query={}, func=lambda x, y: x, exclude_dbs=['test', 'local', 'admin'], **kwargs):
     res = DotDot()
     for db_name in mongo_client.database_names():
         if db_name not in exclude_dbs:
-            res[db_name] = db_transform(mongo_client[db_name], query={}, func=lambda x: x, **kwargs)
+            res[db_name] = db_transform(mongo_client[db_name], query={}, func=func, **kwargs)
     return res
 
 
