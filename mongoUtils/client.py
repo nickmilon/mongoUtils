@@ -3,7 +3,6 @@ from pymongo import MongoClient
 from pymongo.errors import ConfigurationError
 from mongoUtils.helpers import (muDatabase, pp_doc, client_schema)
 from Hellas.Sparta import DotDot
-from decimal import DivisionByZero
 
 
 class muClient(MongoClient):
@@ -66,7 +65,7 @@ class muClient(MongoClient):
         return self.primary(self) is not None
 
     def _db_command(self, command_str, *args):
-        return self._db.command(command_str, *args)
+        return self.db.command(command_str, *args)
 
     def __getitem__(self, name):
         return muDatabase(self, name)

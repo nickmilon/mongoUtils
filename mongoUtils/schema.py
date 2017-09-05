@@ -13,6 +13,7 @@ def schema(collection,
            scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}},
            verbose=2
            ):
+    print("ff 21"* 100)
     """discovers all field's names used by a  a collection's documents
     for a different approach `see here <https://github.com/variety/variety>`_
     also mongoDB will introduce a similar tool
@@ -180,8 +181,9 @@ def schema_client(mongo_client, exclude_dbs=['test', 'local', 'admin']):
     for db in mongo_client.database_names():
         if db not in exclude_dbs:
             for col in mongo_client[db].collection_names():
-                print ("fields in db {} collection {}".format(db, col))
-                schema(mongo_client[db][col], meta=True,  scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}}, verbose=2)
+                if mongo_client[db][col].count() > 0:  # exclude empty @todo: proper fix is do in collection level
+                    print ("fields in db {} collection {}".format(db, col))
+                    schema(mongo_client[db][col], meta=True,  scope={'parms': {'levelMax': -1, 'inclHeaderKeys': False}}, verbose=2)
 
 
 def mongoexport_fields(file_path, collection, query={}, excl_fields_lst=[]):

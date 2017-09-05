@@ -152,7 +152,7 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
         - write_options: operation options (use {'w': 0} for none critical copies
         - verbose: if > 0 prints progress statistics at verbose percent intervals
     """
-    frmt_stats = "copying {:6.2f}% done  documents={:20,d} of {:20,d}"
+    frmt_stats = "copying {:6.2f}% done  documents={:22,d} of {:22,d}"
     if verbose > 0:
         print("copy_collection:{}.{} to ==> {}.{}".format(collObjFrom.database.name, collObjFrom.name, collObjTarget.database.name, collObjTarget.name))
     if dropTarget:
@@ -183,25 +183,49 @@ def coll_copy(collObjFrom, collObjTarget, filter_dict=None,
     return collObjTarget
 
 
-def coll_transform(coll, query={}, func=lambda x, y: x, **kwargs):
+def coll_transform(coll, query={}, func=lambda x, y: x, verbose=True, **kwargs):
     """ transforms collection's documents by applying function func to (doc, collection) func should either return a document or None
     """
     finds = coll.find(query)
+
     max_count = coll.count() if query == {} else None
     counter = DotDot({'total': 0, 'transformed': 0})
-    head_line = "transforming db:'{}' collection:'{}'".format(coll.database.name, coll.name)
-    progress = Progress(max_count=max_count, head_line=head_line,
-                        extra_frmt='{total:12,d}|{transformed:12,d}|', extra_dict=counter, every_seconds=30, every_mod=None)
+    if verbose:
+        head_line = "transforming db:'{}' collection:'{}'".format(coll.database.name, coll.name)
+        progress = Progress(max_count=max_count, head_line=head_line,
+                            extra_frmt='{total:12,d}|{transformed:12,d}|', extra_dict=counter, every_seconds=30, every_mod=None)
     for doc in finds:
         counter.total += 1
         new_doc = func(doc, coll)
         if new_doc:
             counter.transformed += 1
-            coll.save(doc, **kwargs)
-        if counter.total % 100 == 0:
+            coll.replace_one({'_id': doc['_id']}, doc, **kwargs)
+        if verbose and counter.total % 100 == 0:
             progress.progress(100, counter)
-    progress.print_end(counter)
+    if verbose:
+        progress.print_end(counter)
     return counter
+
+
+def coll_validation_set(db, collection_name, validator=None, validationLevel="moderate", validationAction="error"):
+    """ sets validation to a collection
+
+    `see here <https://docs.mongodb.com/manual/core/document-validation/>`_
+
+    :Parameters:
+        - validationLevel (str): one of "moderate" or "strict"
+        - validationAction (str): one of 'error' or 'warn'
+        - validationAction (str): one of 'error' or 'warn'
+
+    :Returns:
+         collection (object)
+    """
+
+    if collection_name in db.collection_names():
+        db.command('collMod', collection_name, validator=validator, validationLevel="moderate")
+    else:
+        db.create_collection(collection_name, validator=validator, validationLevel=validationLevel)
+    return db[collection_name]
 
 
 def db_transform(db, query={}, func=lambda x, y: x, **kwargs):
@@ -234,8 +258,9 @@ def db_copy(dbObjFrom, dbObjTarget, col_name_prefix='',
         - verbose: if > 0 prints progress statistics at verbose percent intervals
     """
     for col_name in dbObjFrom.collection_names():
-        coll_copy(dbObjFrom[col_name], dbObjTarget[col_name_prefix + col_name], filter_dict=None,
-                  create_indexes=create_indexes, dropTarget=dropTarget_collections, write_options=write_options, verbose=verbose)
+        if col_name != "system":
+            coll_copy(dbObjFrom[col_name], dbObjTarget[col_name_prefix + col_name], filter_dict=None,
+                      create_indexes=create_indexes, dropTarget=dropTarget_collections, write_options=write_options, verbose=verbose)
     return dbObjTarget
 
 
@@ -264,6 +289,8 @@ def db_capped_set_or_get(db, coll_name, sizeBytes=2 ** 30, maxDocs=None, autoInd
     `see more here <http://docs.mongodb.org/manual/tutorial/use-capped-collections-for-fast-writes-and-reads>`_
     autoIndexId must be True for replication so must be True except on a stand alone mongodb or
     when collection belongs to local db
+    :warning:
+        - warming existiong indexes will be lost if converted to capped  
     """
     if coll_name not in db.collection_names():
         return db.create_collection(coll_name, capped=True, size=sizeBytes,
@@ -308,6 +335,9 @@ class muBulkOps(object):
           set it to 0 (default to disable auto execute b
         - dwc: (dict) or None default write concern to use in case of autoexecute_every
           DO NOT pass a WriteConcern object just a plain dict i.e {'w':1}
+
+    .. Warning:: | caller should NOT in any way modify documents that are in pipeline pending execute
+                 | if u are not sure use doc.copy() and be careful on swallow copies
     """
     frmt_stats = "{:s}db:{:s} collection:{:s} cnt_operations_executed:{:16,d} cnt_operations_pending:{:6,d}"
 
@@ -643,7 +673,7 @@ def oid_date_range_filter(dt_from=None, dt_upto=None, field_name='_id'):
         - dt_upto (datetime or tuple): end date_time if tuple a datetime is constucted from tuple
         - field_name: (str): optional default to '_id' field to query or None if None returns range only else returns full query
     :Returns:
-        - range query (due to objectId structure $gt includes dt_from) while $lt dt_upto (not included) 
+        - range query (due to objectId structure $gt includes dt_from) while $lt dt_upto (not included)
     """
     def dt(dt_or_tuple):
         if isinstance(dt_or_tuple, datetime):
@@ -661,7 +691,7 @@ def oid_date_range_filter(dt_from=None, dt_upto=None, field_name='_id'):
 
 
 def OID_gaps(col=None, ObjectId_field="_id", threshold_secs=60):
-        """ finds gaps in collections Object_id) 
+        """ finds gaps in collections Object_id)
         """
 
         frmt = "|docs:{:12,d}|of {:12,d}| %: {:4.4f}|"
@@ -695,8 +725,8 @@ def db_counts(mongo_client, verbose=True):
     """ returns document counts for each collection in client's db
     """
     res = {}
-    for db in mongo_client.database_names(): 
-        res[db]={}
+    for db in mongo_client.database_names():
+        res[db] = {}
         for col in mongo_client[db].collection_names():
             res[db][col] = mongo_client[db][col].count()
     return res

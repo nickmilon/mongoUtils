@@ -37,8 +37,7 @@ class Aggregation(object):
         >>> next(aggr_obj())                                                                   # execute and get results
         {u'avg_followers': 2943.8210227272725, u'_id': None})                                  # results
      """                                             # executes aggregation
-    _operators = 'project match redact limit skip sort unwind group out geoNear indexStats sample lookup graphLookup'.split(' ')
-    _frmt_str = "{}\nstage#= {:2d}, operation={}"
+    _operators = 'project match redact limit skip sort unwind group out geoNear indexStats sample lookup graphLookup facet, collStats, indexStats '.split(' ')
 
     def __init__(self, collection, pipeline=None, **kwargs):
         def _makefun(name):
@@ -149,11 +148,11 @@ class AggrCounts(Aggregation):
     """
     constructs a group count aggregation pipeline based on :class:`~Aggregation` class
 
-    :param obj collection: a pymongo collection object
-    :param str field: field name
-    :param dict match: a query match expression, defaults to None
-    :param dict sort: a sort expression defaults to {'count': -1}
-    :param dict kwargs: optional arguments to pass to parent :class:`~Aggregation`
+    :param obj (collection): a pymongo collection object
+    :param field (str or list of strings): field name
+    :param match (dict): a query match expression, defaults to None
+    :param sort (dict): a sort expression defaults to {'count': -1}
+    :param kwargs 9dict): optional arguments to pass to parent :class:`~Aggregation`
 
     :Example:
         >>> from pymongo import MongoClient;from mongoUtils.configuration import testDbConStr  # import MongoClient
@@ -230,7 +229,7 @@ class AggrLookUp(Aggregation):
 class GraphLookUp(Aggregation):
     def __init__(self, collection, from_collection, startWith, connectFromField, connectToField, AS,
                  maxDepth=None, depthField=None, restrictSearchWithMatch=None,
-                 match=None, orphans=False, **kwargs): 
+                 match=None, orphans=False, **kwargs):
         super(GraphLookUp, self).__init__(collection, **kwargs)
         args = {'from': from_collection,
                 'startWith': startWith,
@@ -251,8 +250,9 @@ class GraphLookUp(Aggregation):
             self.match({AS: []})
         elif orphans is False:
             self.match({AS: {'$ne': []}})
-        
 
+
+ 
 
 def projection_tstodt(ts_field_name):
     """ returns a projection field that can be used as native mongoDB date from a ts field
